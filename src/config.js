@@ -65,6 +65,7 @@ module.exports = {
   verifiedRoleName: "Cliente",
   staffRoleName: "Equipe Loja",
   welcomeChannelName: "boas-vindas",
+  connectChannelName: "connect",
   partnershipsChannelName: "parcerias",
   infoChannelName: "sobre-a-loja",
   ticketPanelChannelName: "atendimento",

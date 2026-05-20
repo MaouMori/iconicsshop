@@ -8,12 +8,16 @@ const {
   EmbedBuilder,
   Events,
   GatewayIntentBits,
+  ModalBuilder,
   PermissionFlagsBits,
   StringSelectMenuBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require("discord.js");
 const config = require("./config");
 
 const pendingPayments = new Map();
+const pendingRegistrations = new Map();
 const TEMP_MESSAGE_MS = 10_000;
 
 const client = new Client({
@@ -48,7 +52,7 @@ client.on(Events.MessageCreate, async (message) => {
       }
 
       const result = await setupGuild(message.guild);
-      await sendVerificationPanel(result.welcomeChannel);
+      await sendRegistrationPanel(result.connectChannel);
       await sendTicketPanel(result.ticketPanelChannel);
       await sendTemporaryReply(message, "Servidor configurado. Criei/ajustei cargos, canais, permissoes e paineis.");
       return;
@@ -100,6 +104,11 @@ client.on(Events.InteractionCreate, async (interaction) => {
 
     if (interaction.isStringSelectMenu()) {
       await handleSelectMenu(interaction);
+      return;
+    }
+
+    if (interaction.isModalSubmit()) {
+      await handleModalSubmit(interaction);
     }
   } catch (error) {
     console.error(error);
@@ -130,6 +139,14 @@ async function sendHelp(message) {
           "`!painel-tickets` - Envia o painel de tickets.",
           "`!painel-verificacao` - Envia o painel de liberacao.",
           "`!cobrar 10,00` - Gera Pix dentro de um ticket.",
+        ].join("\n"),
+      },
+      {
+        name: "Registro",
+        value: [
+          "Novos membros entram pelo canal `connect`.",
+          "O registro troca o nickname, pergunta o que a pessoa busca e registra indicacao.",
+          "Depois do registro, o cargo `Cliente` libera a loja.",
         ].join("\n"),
       },
       {
@@ -168,7 +185,7 @@ async function handleCommand(interaction) {
   if (interaction.commandName === "setup") {
     await interaction.deferReply({ ephemeral: true });
     const result = await setupGuild(interaction.guild);
-    await sendVerificationPanel(result.welcomeChannel);
+    await sendRegistrationPanel(result.connectChannel);
     await sendTicketPanel(result.ticketPanelChannel);
     await interaction.editReply("Servidor configurado. Criei os canais, cargos e paineis da loja.");
     return;
@@ -187,13 +204,8 @@ async function handleCommand(interaction) {
 }
 
 async function handleButton(interaction) {
-  if (interaction.customId === "verify_member") {
-    const role = await ensureRole(interaction.guild, config.verifiedRoleName);
-    await interaction.member.roles.add(role);
-    await interaction.reply({
-      content: `Voce foi liberado para ver os canais da ${config.shopName}.`,
-      ephemeral: true,
-    });
+  if (interaction.customId === "verify_member" || interaction.customId === "start_registration") {
+    await showNameRegistrationModal(interaction);
     return;
   }
 
@@ -237,6 +249,19 @@ async function handleButton(interaction) {
 }
 
 async function handleSelectMenu(interaction) {
+  if (interaction.customId === "registration_interest") {
+    const registration = pendingRegistrations.get(interaction.user.id);
+    if (!registration) {
+      await interaction.reply({ content: "Comece pelo botao de registro no canal connect.", ephemeral: true });
+      return;
+    }
+
+    registration.interest = interaction.values[0];
+    pendingRegistrations.set(interaction.user.id, registration);
+    await showReferralRegistrationModal(interaction);
+    return;
+  }
+
   if (interaction.customId !== "ticket_category") return;
 
   await interaction.deferReply({ ephemeral: true });
@@ -258,6 +283,72 @@ async function handleSelectMenu(interaction) {
   const ticketChannel = await createTicketChannel(interaction, ticketType);
   await interaction.editReply(`Ticket criado: ${ticketChannel}`);
   setTimeout(() => interaction.deleteReply().catch(() => {}), TEMP_MESSAGE_MS);
+}
+
+async function handleModalSubmit(interaction) {
+  if (interaction.customId === "registration_name") {
+    const nickname = interaction.fields.getTextInputValue("registration_nickname").trim();
+    if (!nickname) {
+      await interaction.reply({ content: "O nome/nickname nao pode ficar em branco.", ephemeral: true });
+      return;
+    }
+
+    await interaction.member.setNickname(nickname.slice(0, 32), "Registro Iconics Store").catch(() => {});
+    pendingRegistrations.set(interaction.user.id, { nickname });
+
+    const interestMenu = new StringSelectMenuBuilder()
+      .setCustomId("registration_interest")
+      .setPlaceholder("O que voce busca encontrar na loja?")
+      .addOptions(
+        { label: "Cabelos", description: "Cabelos, estilos e aparencias.", value: "Cabelos", emoji: "💇" },
+        { label: "Roupas", description: "Looks, pecas e combinacoes.", value: "Roupas", emoji: "👕" },
+        { label: "Site", description: "Ajuda, compras e acesso pelo site.", value: "Site", emoji: "🌐" },
+        { label: "Prop", description: "Props, itens e detalhes especiais.", value: "Prop", emoji: "✨" },
+        { label: "Parceria", description: "Parcerias, divulgacoes e collabs.", value: "Parceria", emoji: "🤝" },
+        { label: "Outro", description: "Algo diferente das opcoes acima.", value: "Outro", emoji: "💜" }
+      );
+
+    await interaction.reply({
+      content: `Que nome lindo, **${nickname}**. Agora escolha o que voce busca encontrar na ${config.shopName}:`,
+      components: [new ActionRowBuilder().addComponents(interestMenu)],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (interaction.customId === "registration_referral") {
+    const referral = interaction.fields.getTextInputValue("registration_referral_answer").trim();
+    if (!referral) {
+      await interaction.reply({ content: "Essa resposta nao pode ficar em branco.", ephemeral: true });
+      return;
+    }
+
+    const registration = pendingRegistrations.get(interaction.user.id);
+    if (!registration?.nickname || !registration?.interest) {
+      await interaction.reply({ content: "Seu registro expirou. Comece de novo pelo canal connect.", ephemeral: true });
+      return;
+    }
+
+    const role = await ensureRole(interaction.guild, config.verifiedRoleName);
+    await interaction.member.roles.add(role);
+    pendingRegistrations.delete(interaction.user.id);
+
+    await interaction.reply({
+      content: `Registro concluido. Bem-vindo(a) a **${config.shopName}**, ${registration.nickname}.`,
+      ephemeral: true,
+    });
+
+    await logTicketEvent(
+      interaction.guild,
+      "Novo registro",
+      [
+        `Usuario: ${interaction.user}`,
+        `Nome/Nick: ${registration.nickname}`,
+        `Busca: ${registration.interest}`,
+        `Como conheceu/indicacao: ${referral}`,
+      ].join("\n")
+    );
+  }
 }
 
 async function setupGuild(guild) {
@@ -287,6 +378,11 @@ async function setupGuild(guild) {
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
   ]);
 
+  const connectChannel = await ensureTextChannel(guild, config.connectChannelName, publicCategory.id, [
+    { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
+    { id: staffRole.id, allow: [PermissionFlagsBits.SendMessages] },
+  ]);
+
   await ensureTextChannel(guild, config.partnershipsChannelName, publicCategory.id, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
     { id: staffRole.id, allow: [PermissionFlagsBits.SendMessages] },
@@ -303,7 +399,7 @@ async function setupGuild(guild) {
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
   ]);
 
-  return { welcomeChannel, ticketPanelChannel, ticketCategory, verifiedRole, staffRole };
+  return { welcomeChannel, connectChannel, ticketPanelChannel, ticketCategory, verifiedRole, staffRole };
 }
 
 async function ensureRole(guild, name, options = {}) {
@@ -347,26 +443,74 @@ async function ensureTextChannel(guild, name, parentId, permissionOverwrites) {
 }
 
 async function sendVerificationPanel(channel) {
+  await sendRegistrationPanel(channel);
+}
+
+async function sendRegistrationPanel(channel) {
   const embed = new EmbedBuilder()
-    .setColor(0x2f33ff)
-    .setTitle(`Bem-vindo(a) a ${config.shopName}`)
+    .setColor(0xf0a6ff)
+    .setTitle(`Registro ${config.shopName}`)
     .setDescription(
       [
-        "Para acessar os canais da loja, clique no botao abaixo.",
-        "Quem ainda nao se liberar vera apenas boas-vindas e parcerias.",
+        "**Oi, seja bem-vindo(a).**",
+        "Antes de acessar a loja, faca um registro rapidinho para a equipe te conhecer melhor.",
+        "",
+        "**Como funciona:**",
+        "`1` Informe seu nome ou nickname.",
+        "`2` Escolha o que voce busca na loja.",
+        "`3` Conte como conheceu a gente ou quem te indicou.",
+        "",
+        "Depois disso eu libero seu acesso automaticamente.",
       ].join("\n")
-    );
+    )
+    .setFooter({ text: `${config.shopName} - registro de entrada` });
 
   if (config.logoUrl) embed.setThumbnail(config.logoUrl);
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
-      .setCustomId("verify_member")
-      .setLabel("Liberar acesso")
+      .setCustomId("start_registration")
+      .setLabel("Fazer registro")
       .setStyle(ButtonStyle.Primary)
   );
 
   await channel.send({ embeds: [embed], components: [row] });
+}
+
+async function showNameRegistrationModal(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId("registration_name")
+    .setTitle("Registro Iconics Store");
+
+  const nicknameInput = new TextInputBuilder()
+    .setCustomId("registration_nickname")
+    .setLabel("Qual nome ou nickname voce quer usar?")
+    .setPlaceholder("Ex: Maou, Lua, Gabi...")
+    .setMinLength(2)
+    .setMaxLength(32)
+    .setRequired(true)
+    .setStyle(TextInputStyle.Short);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(nicknameInput));
+  await interaction.showModal(modal);
+}
+
+async function showReferralRegistrationModal(interaction) {
+  const modal = new ModalBuilder()
+    .setCustomId("registration_referral")
+    .setTitle("Ultima perguntinha");
+
+  const referralInput = new TextInputBuilder()
+    .setCustomId("registration_referral_answer")
+    .setLabel("Como voce conheceu nossa loja?")
+    .setPlaceholder("Foi indicado por alguem? Informe o usuario. Se nao, conte onde encontrou a loja.")
+    .setMinLength(2)
+    .setMaxLength(300)
+    .setRequired(true)
+    .setStyle(TextInputStyle.Paragraph);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(referralInput));
+  await interaction.showModal(modal);
 }
 
 async function sendTicketPanel(channel) {

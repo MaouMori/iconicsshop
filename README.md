@@ -3,7 +3,9 @@
 Bot em `discord.js` com:
 
 - Liberacao de membros por botao.
-- Quem nao se liberar ve apenas `boas-vindas` e `parcerias`.
+- Registro obrigatorio no canal `connect`.
+- Quem nao se registrar ve apenas `boas-vindas`, `connect` e `parcerias`.
+- O registro troca o nickname do membro, pergunta o que ele busca e registra indicacao/origem.
 - Painel de atendimento no estilo da imagem, com embed e menu.
 - Tickets separados por categoria: tirar duvida/pergunta, orcamentos, cabelos, roupas, ped, site e parcerias.
 - Ticket privado apenas para cliente e equipe.
@@ -48,6 +50,7 @@ npm start
 - Cargo `Cliente`.
 - Cargo `Equipe Loja`.
 - Categoria `Entrada` com `boas-vindas` e `parcerias`.
+- Canal `connect` para registro de novos membros.
 - Categoria `Loja` visivel apenas para clientes liberados.
 - Canal `atendimento` com o painel de tickets.
 - Categoria `Tickets` para os tickets abertos.
