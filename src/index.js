@@ -13,11 +13,57 @@ const {
 const config = require("./config");
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+  ],
 });
 
 client.once(Events.ClientReady, (readyClient) => {
   console.log(`Bot online como ${readyClient.user.tag}`);
+});
+
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot || !message.guild) return;
+  if (message.content.trim().toLowerCase() !== "!help") return;
+
+  const embed = new EmbedBuilder()
+    .setColor(0x2528d8)
+    .setTitle(`Ajuda - ${config.shopName}`)
+    .setDescription("Veja abaixo os comandos e funcoes principais do bot da loja.")
+    .addFields(
+      {
+        name: "Cliente",
+        value: [
+          "`!help` - Mostra esta mensagem.",
+          "Botao `Liberar acesso` - Libera os canais da loja.",
+          "Menu de atendimento - Abre ticket na categoria escolhida.",
+        ].join("\n"),
+      },
+      {
+        name: "Tickets",
+        value: [
+          "Categorias: duvidas, orcamentos, cabelos, roupas, ped, site e parcerias.",
+          "Cada atendimento abre um canal privado para voce e a equipe.",
+          "Use o botao `Fechar ticket` quando terminar.",
+        ].join("\n"),
+      },
+      {
+        name: "Equipe/Admin",
+        value: [
+          "`/setup` - Cria cargos, canais, permissoes e paineis.",
+          "`/painel-tickets` - Envia novamente o painel de atendimento.",
+          "`/painel-verificacao` - Envia novamente o painel de liberacao.",
+        ].join("\n"),
+      }
+    )
+    .setFooter({ text: `${config.shopName} - atendimento da loja` });
+
+  if (config.logoUrl) embed.setThumbnail(config.logoUrl);
+
+  await message.reply({ embeds: [embed] });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
