@@ -371,24 +371,27 @@ async function sendVerificationPanel(channel) {
 
 async function sendTicketPanel(channel) {
   const embed = new EmbedBuilder()
-    .setColor(0x2528d8)
-    .setTitle(`ATENDIMENTO ${config.shopName.toUpperCase()}`)
+    .setColor(0xffffff)
+    .setTitle("ATENDIMENTO")
     .setDescription(
       [
-        `Seja bem-vindo ao sistema de atendimento ${config.shopName}, use o menu abaixo para abrir um ticket e aguarde ser atendido.`,
+        "**Para abrir um ticket clique no menu abaixo.**",
         "",
-        "**Nao abra um ticket sem necessidade.**",
+        "> **LEIA ANTES DE ABRIR**",
+        "",
+        "**Nao abra um ticket sem NECESSIDADE.**",
+        "",
         "**Nao marque excessivamente a equipe.**",
-        "**Agilize o atendimento fornecendo o maximo de informacoes possiveis.**",
       ].join("\n")
-    );
+    )
+    .setFooter({ text: `${config.shopName} © All rights reserved` });
 
   if (config.logoUrl) embed.setThumbnail(config.logoUrl);
   if (config.bannerUrl) embed.setImage(config.bannerUrl);
 
   const menu = new StringSelectMenuBuilder()
     .setCustomId("ticket_category")
-    .setPlaceholder("Selecione a categoria de atendimento.")
+    .setPlaceholder("Selecione uma opcao...")
     .addOptions(
       config.ticketTypes.map((type) => ({
         label: type.label,
