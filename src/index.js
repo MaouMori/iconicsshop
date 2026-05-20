@@ -14,6 +14,7 @@ const {
 const config = require("./config");
 
 const pendingPayments = new Map();
+const TEMP_MESSAGE_MS = 10_000;
 
 const client = new Client({
   intents: [
@@ -42,36 +43,36 @@ client.on(Events.MessageCreate, async (message) => {
 
     if (command === "!setup") {
       if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-        await message.reply("Apenas administradores podem usar este comando.");
+        await sendTemporaryReply(message, "Apenas administradores podem usar este comando.");
         return;
       }
 
       const result = await setupGuild(message.guild);
       await sendVerificationPanel(result.welcomeChannel);
       await sendTicketPanel(result.ticketPanelChannel);
-      await message.reply("Servidor configurado. Criei/ajustei cargos, canais, permissoes e paineis.");
+      await sendTemporaryReply(message, "Servidor configurado. Criei/ajustei cargos, canais, permissoes e paineis.");
       return;
     }
 
     if (command === "!painel-tickets") {
       if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        await message.reply("Voce precisa da permissao `Gerenciar servidor` para enviar este painel.");
+        await sendTemporaryReply(message, "Voce precisa da permissao `Gerenciar servidor` para enviar este painel.");
         return;
       }
 
       await sendTicketPanel(message.channel);
-      await message.reply("Painel de tickets enviado.");
+      await sendTemporaryReply(message, "Painel de tickets enviado.");
       return;
     }
 
     if (command === "!painel-verificacao") {
       if (!message.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
-        await message.reply("Voce precisa da permissao `Gerenciar servidor` para enviar este painel.");
+        await sendTemporaryReply(message, "Voce precisa da permissao `Gerenciar servidor` para enviar este painel.");
         return;
       }
 
       await sendVerificationPanel(message.channel);
-      await message.reply("Painel de verificacao enviado.");
+      await sendTemporaryReply(message, "Painel de verificacao enviado.");
       return;
     }
 
@@ -81,7 +82,7 @@ client.on(Events.MessageCreate, async (message) => {
     }
   } catch (error) {
     console.error(error);
-    await message.reply("Algo deu errado ao executar esse comando. Veja os logs do bot.").catch(() => {});
+    await sendTemporaryReply(message, "Algo deu errado ao executar esse comando. Veja os logs do bot.").catch(() => {});
   }
 });
 
@@ -152,6 +153,15 @@ async function sendHelp(message) {
 
   if (config.logoUrl) embed.setThumbnail(config.logoUrl);
   await message.reply({ embeds: [embed] });
+}
+
+async function sendTemporaryReply(message, options, ttl = TEMP_MESSAGE_MS) {
+  const reply = await message.reply(options).catch(() => null);
+  setTimeout(() => {
+    reply?.delete().catch(() => {});
+    message.delete().catch(() => {});
+  }, ttl);
+  return reply;
 }
 
 async function handleCommand(interaction) {
@@ -247,6 +257,7 @@ async function handleSelectMenu(interaction) {
 
   const ticketChannel = await createTicketChannel(interaction, ticketType);
   await interaction.editReply(`Ticket criado: ${ticketChannel}`);
+  setTimeout(() => interaction.deleteReply().catch(() => {}), TEMP_MESSAGE_MS);
 }
 
 async function setupGuild(guild) {
@@ -639,15 +650,29 @@ async function createTranscript(channel) {
 
 async function finalizeTicket(channel, closedBy, reason) {
   const ownerId = getTicketOwnerId(channel);
+  const ticketType = channel.topic?.match(/Tipo: ([^|]+)/)?.[1]?.trim() || "desconhecido";
   const transcript = await createTranscript(channel);
   const file = new AttachmentBuilder(transcript, { name: `transcript-${channel.name}.txt` });
+  const logChannel = channel.guild.channels.cache.find((item) => item.name === config.ticketLogsChannelName && item.type === ChannelType.GuildText);
 
-  await logTicketEvent(
-    channel.guild,
-    "Ticket finalizado",
-    `Canal: #${channel.name}\nCliente: ${ownerId ? `<@${ownerId}>` : "desconhecido"}\nFinalizado por: ${closedBy}\nMotivo: ${reason}`,
-    [file]
-  );
+  if (logChannel) {
+    const embed = new EmbedBuilder()
+      .setColor(0x2da160)
+      .setTitle("Ticket Encerrado")
+      .addFields(
+        { name: "Utilizador", value: ownerId ? `<@${ownerId}>` : "desconhecido", inline: false },
+        { name: "Fechado por", value: `${closedBy}`, inline: false },
+        { name: "Tipo", value: ticketType, inline: true },
+        { name: "Motivo", value: reason, inline: true },
+        { name: "Ticket ID", value: channel.id, inline: false }
+      )
+      .setTimestamp();
+
+    await logChannel.send({
+      embeds: [embed],
+      files: [file],
+    }).catch(() => {});
+  }
 
   await notifyTicketOwner(channel, `Seu ticket #${channel.name} foi finalizado. Obrigado por entrar em contato com a ${config.shopName}.`);
   setTimeout(() => channel.delete(reason).catch(() => {}), 8000);

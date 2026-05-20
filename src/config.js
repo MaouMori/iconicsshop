@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const shopName = process.env.SHOP_NAME || "Elyra Shop";
+const shopName = process.env.SHOP_NAME || "Iconics Store";
 
 const ticketTypes = [
   {

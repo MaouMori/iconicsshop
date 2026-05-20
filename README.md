@@ -25,7 +25,7 @@ npm install
 DISCORD_TOKEN=token_do_bot
 DISCORD_CLIENT_ID=id_da_aplicacao
 DISCORD_GUILD_ID=id_do_servidor
-SHOP_NAME=Elyra Shop
+SHOP_NAME=Iconics Store
 SHOP_LOGO_URL=https://link-da-logo.png
 SHOP_BANNER_URL=https://link-do-banner.png
 MERCADO_PAGO_ACCESS_TOKEN=token_do_mercado_pago
@@ -103,7 +103,7 @@ Na Discloud, conecte o repositorio do GitHub no painel ou pela integracao oficia
 DISCORD_TOKEN=token_do_bot
 DISCORD_CLIENT_ID=id_da_aplicacao
 DISCORD_GUILD_ID=id_do_servidor
-SHOP_NAME=Iconics Shop
+SHOP_NAME=Iconics Store
 SHOP_LOGO_URL=
 SHOP_BANNER_URL=
 ```
