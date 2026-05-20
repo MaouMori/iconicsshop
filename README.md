@@ -6,7 +6,10 @@ Bot em `discord.js` com:
 - Quem nao se liberar ve apenas `boas-vindas` e `parcerias`.
 - Painel de atendimento no estilo da imagem, com embed e menu.
 - Tickets separados por categoria: tirar duvida/pergunta, orcamentos, cabelos, roupas, ped, site e parcerias.
-- Botao para fechar ticket.
+- Ticket privado apenas para cliente e equipe.
+- Botoes para assumir, notificar cliente e finalizar.
+- Logs e transcript em `logs-tickets`.
+- Pix automatico via Mercado Pago, se `MERCADO_PAGO_ACCESS_TOKEN` estiver configurado.
 
 ## Como configurar
 
@@ -25,6 +28,7 @@ DISCORD_GUILD_ID=id_do_servidor
 SHOP_NAME=Elyra Shop
 SHOP_LOGO_URL=https://link-da-logo.png
 SHOP_BANNER_URL=https://link-do-banner.png
+MERCADO_PAGO_ACCESS_TOKEN=token_do_mercado_pago
 ```
 
 3. Registre os comandos slash:
@@ -39,7 +43,7 @@ npm run deploy
 npm start
 ```
 
-5. No Discord, use `/setup` em qualquer canal. O bot vai criar:
+5. No Discord, use `/setup` ou `!setup` em qualquer canal. O bot vai criar:
 
 - Cargo `Cliente`.
 - Cargo `Equipe Loja`.
@@ -47,6 +51,19 @@ npm start
 - Categoria `Loja` visivel apenas para clientes liberados.
 - Canal `atendimento` com o painel de tickets.
 - Categoria `Tickets` para os tickets abertos.
+- Canal `logs-tickets` para logs e transcripts.
+
+## Comandos
+
+```text
+!help
+!setup
+!painel-tickets
+!painel-verificacao
+!cobrar 10,00
+```
+
+`!cobrar` deve ser usado dentro de um ticket por alguem da equipe. Ele cria um Pix pelo Mercado Pago, verifica o status a cada minuto e fecha o ticket automaticamente quando o pagamento for aprovado.
 
 ## Permissoes importantes
 
