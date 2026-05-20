@@ -371,17 +371,22 @@ async function sendVerificationPanel(channel) {
 
 async function sendTicketPanel(channel) {
   const embed = new EmbedBuilder()
-    .setColor(0xffffff)
-    .setTitle("ATENDIMENTO")
+    .setColor(0x8b5cf6)
+    .setTitle("ATENDIMENTO ICONICS STORE")
     .setDescription(
       [
-        "**Para abrir um ticket clique no menu abaixo.**",
+        "**Bem-vindo ao atendimento da Iconics Store.**",
+        "Escolha abaixo a categoria que combina com o que voce precisa e nossa equipe ira te atender.",
         "",
         "> **LEIA ANTES DE ABRIR**",
         "",
-        "**Nao abra um ticket sem NECESSIDADE.**",
+        "**Nao abra ticket sem necessidade.**",
+        "**Nao marque a equipe varias vezes.**",
+        "**Envie detalhes, prints e referencias para agilizar.**",
         "",
-        "**Nao marque excessivamente a equipe.**",
+        "**Categorias disponiveis**",
+        "`Duvidas`  `Orcamentos`  `Cabelos`  `Roupas`",
+        "`Pedidos`  `Site`  `Parcerias`",
       ].join("\n")
     )
     .setFooter({ text: `${config.shopName} © All rights reserved` });
@@ -397,6 +402,7 @@ async function sendTicketPanel(channel) {
         label: type.label,
         description: type.description,
         value: type.id,
+        emoji: type.emoji,
       }))
     );
 
