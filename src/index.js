@@ -381,4 +381,13 @@ async function createTicketChannel(interaction, ticketType) {
   return channel;
 }
 
-client.login(config.token);
+if (!config.token) {
+  console.error("DISCORD_TOKEN nao foi configurado nas variaveis de ambiente.");
+  process.exit(1);
+}
+
+client.login(config.token).catch((error) => {
+  console.error("Nao foi possivel conectar ao Discord. Verifique DISCORD_TOKEN e intents do bot.");
+  console.error(error);
+  process.exit(1);
+});
