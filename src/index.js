@@ -338,7 +338,7 @@ async function handleModalSubmit(interaction) {
       ephemeral: true,
     });
 
-    await logTicketEvent(
+    await logRegistrationEvent(
       interaction.guild,
       "Novo registro",
       [
@@ -395,6 +395,11 @@ async function setupGuild(guild) {
   ]);
 
   await ensureTextChannel(guild, config.ticketLogsChannelName, ticketCategory.id, [
+    { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+  ]);
+
+  await ensureTextChannel(guild, config.registrationLogsChannelName, ticketCategory.id, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
   ]);
@@ -777,6 +782,21 @@ async function logTicketEvent(guild, title, description, files = []) {
         .setTimestamp(),
     ],
     files,
+  }).catch(() => {});
+}
+
+async function logRegistrationEvent(guild, title, description) {
+  const logChannel = guild.channels.cache.find((channel) => channel.name === config.registrationLogsChannelName && channel.type === ChannelType.GuildText);
+  if (!logChannel) return;
+
+  await logChannel.send({
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xf0a6ff)
+        .setTitle(title)
+        .setDescription(description)
+        .setTimestamp(),
+    ],
   }).catch(() => {});
 }
 

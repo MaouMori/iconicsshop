@@ -70,6 +70,7 @@ module.exports = {
   infoChannelName: "sobre-a-loja",
   ticketPanelChannelName: "atendimento",
   ticketLogsChannelName: "logs-tickets",
+  registrationLogsChannelName: "logs-registros",
   ticketCategoryName: "Tickets",
   storeCategoryName: "Loja",
   publicCategoryName: "Entrada",

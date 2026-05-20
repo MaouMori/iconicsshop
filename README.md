@@ -11,6 +11,7 @@ Bot em `discord.js` com:
 - Ticket privado apenas para cliente e equipe.
 - Botoes para assumir, notificar cliente e finalizar.
 - Logs e transcript em `logs-tickets`.
+- Registros em `logs-registros`, visivel apenas para a equipe.
 - Pix automatico via Mercado Pago, se `MERCADO_PAGO_ACCESS_TOKEN` estiver configurado.
 
 ## Como configurar
@@ -55,6 +56,7 @@ npm start
 - Canal `atendimento` com o painel de tickets.
 - Categoria `Tickets` para os tickets abertos.
 - Canal `logs-tickets` para logs e transcripts.
+- Canal `logs-registros` para registros de entrada.
 
 ## Comandos
 
