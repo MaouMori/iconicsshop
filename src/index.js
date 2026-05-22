@@ -356,6 +356,7 @@ async function handleSelectMenu(interaction) {
   }
 
   pendingTicketRequests.set(interaction.user.id, { ticketType });
+  await interaction.message.edit({ components: [buildTicketMenuRow()] }).catch(() => {});
   await showTicketSubjectModal(interaction, ticketType);
 }
 
@@ -656,6 +657,13 @@ async function sendTicketPanel(channel) {
   if (config.logoUrl) embed.setThumbnail(config.logoUrl);
   if (config.bannerUrl) embed.setImage(config.bannerUrl);
 
+  await channel.send({
+    embeds: [embed],
+    components: [buildTicketMenuRow()],
+  });
+}
+
+function buildTicketMenuRow() {
   const menu = new StringSelectMenuBuilder()
     .setCustomId("ticket_category")
     .setPlaceholder("Selecione uma opcao...")
@@ -668,10 +676,7 @@ async function sendTicketPanel(channel) {
       }))
     );
 
-  await channel.send({
-    embeds: [embed],
-    components: [new ActionRowBuilder().addComponents(menu)],
-  });
+  return new ActionRowBuilder().addComponents(menu);
 }
 
 async function createTicketChannel(interaction, ticketType, subject) {
