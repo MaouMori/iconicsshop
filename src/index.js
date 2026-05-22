@@ -439,10 +439,26 @@ async function handleModalSubmit(interaction) {
 
     pendingRegistrations.delete(interaction.user.id);
 
+    const destinationChannel = await getPostRegistrationChannel(interaction.guild);
+    const destinationText = destinationChannel
+      ? `Agora pode ir para ${destinationChannel} para continuar.`
+      : "Agora voce ja pode explorar os canais liberados da loja.";
+    const components = destinationChannel
+      ? [
+          new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel("Ir para a loja")
+              .setStyle(ButtonStyle.Link)
+              .setURL(`https://discord.com/channels/${interaction.guild.id}/${destinationChannel.id}`)
+          ),
+        ]
+      : [];
+
     await sendTemporaryInteractionReply(interaction, {
-      content: `Registro concluido. Bem-vindo(a) a **${config.shopName}**, ${registration.nickname}.`,
+      content: `Registro concluido. Bem-vindo(a) a **${config.shopName}**, ${registration.nickname}. ${destinationText}`,
+      components,
       ephemeral: true,
-    });
+    }, 60_000);
 
     await logRegistrationEvent(
       interaction.guild,
@@ -491,6 +507,15 @@ async function getVerifiedRole(guild) {
   }
 
   return ensureRole(guild, config.verifiedRoleName);
+}
+
+async function getPostRegistrationChannel(guild) {
+  if (config.postRegistrationChannelId) {
+    const channel = await guild.channels.fetch(config.postRegistrationChannelId).catch(() => null);
+    if (channel) return channel;
+  }
+
+  return findChannelByNames(guild, [config.infoChannelName, "sobre-nos", "chat-geral"], ChannelType.GuildText) || null;
 }
 
 async function setupGuild(guild) {

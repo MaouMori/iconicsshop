@@ -66,6 +66,7 @@ module.exports = {
   ticketHeaderImageUrl: process.env.TICKET_HEADER_IMAGE_URL || process.env.SHOP_BANNER_URL || null,
   ticketClosedImageUrl: process.env.TICKET_CLOSED_IMAGE_URL || process.env.SHOP_BANNER_URL || null,
   verifiedRoleId: process.env.VERIFIED_ROLE_ID || "1506133179356942368",
+  postRegistrationChannelId: process.env.POST_REGISTRATION_CHANNEL_ID || null,
   verifiedRoleName: "Cliente",
   staffRoleName: "Equipe Loja",
   welcomeChannelName: "💜┊boas-vindas",
