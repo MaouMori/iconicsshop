@@ -34,6 +34,7 @@ SHOP_BANNER_URL=https://link-do-banner.png
 WELCOME_BANNER_URL=https://link-do-banner-de-boas-vindas.png
 TICKET_HEADER_IMAGE_URL=https://link-da-imagem-do-cabecalho-do-ticket.png
 TICKET_CLOSED_IMAGE_URL=https://link-da-imagem-de-ticket-finalizado.png
+VERIFIED_ROLE_ID=1506133179356942368
 MERCADO_PAGO_ACCESS_TOKEN=token_do_mercado_pago
 ```
 

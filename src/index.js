@@ -414,7 +414,7 @@ async function handleModalSubmit(interaction) {
       return;
     }
 
-    const role = await ensureRole(interaction.guild, config.verifiedRoleName).catch((error) => {
+    const role = await getVerifiedRole(interaction.guild).catch((error) => {
       console.error(`Nao consegui criar/encontrar cargo ${config.verifiedRoleName}. Codigo: ${error.code || "sem-codigo"}`);
       return null;
     });
@@ -484,9 +484,18 @@ async function addRoleSafely(member, role) {
     });
 }
 
+async function getVerifiedRole(guild) {
+  if (config.verifiedRoleId) {
+    const roleById = await guild.roles.fetch(config.verifiedRoleId).catch(() => null);
+    if (roleById) return roleById;
+  }
+
+  return ensureRole(guild, config.verifiedRoleName);
+}
+
 async function setupGuild(guild) {
   const everyone = guild.roles.everyone;
-  const verifiedRole = await ensureRole(guild, config.verifiedRoleName);
+  const verifiedRole = await getVerifiedRole(guild);
   const staffRole = await ensureRole(guild, config.staffRoleName, {
     color: 0x5865f2,
     mentionable: true,
