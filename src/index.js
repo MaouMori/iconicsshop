@@ -104,7 +104,7 @@ client.on(Events.GuildMemberAdd, async (member) => {
   const welcomeChannel = member.guild.channels.cache.find((channel) => channel.name === config.welcomeChannelName && channel.type === ChannelType.GuildText);
   if (!welcomeChannel) return;
 
-  const embed = buildStoreEmbed()
+  const embed = buildStoreEmbed({ imageUrl: config.welcomeBannerUrl })
     .setTitle(`Bem-vindo(a) a ${config.shopName}`)
     .setDescription(
       [
@@ -143,16 +143,10 @@ client.on(Events.InteractionCreate, async (interaction) => {
     }
   } catch (error) {
     console.error(error);
-    const payload = {
+    await sendTemporaryInteractionReply(interaction, {
       content: "Algo deu errado ao executar essa acao. Confira minhas permissoes e tente novamente.",
       ephemeral: true,
-    };
-
-    if (interaction.deferred || interaction.replied) {
-      await interaction.followUp(payload).catch(() => {});
-    } else {
-      await interaction.reply(payload).catch(() => {});
-    }
+    });
   }
 });
 
@@ -214,6 +208,18 @@ async function sendTemporaryReply(message, options, ttl = TEMP_MESSAGE_MS) {
   return reply;
 }
 
+async function sendTemporaryInteractionReply(interaction, options, ttl = TEMP_MESSAGE_MS) {
+  const payload = typeof options === "string" ? { content: options, ephemeral: true } : options;
+
+  if (interaction.deferred || interaction.replied) {
+    await interaction.followUp(payload).catch(() => {});
+  } else {
+    await interaction.reply(payload).catch(() => {});
+  }
+
+  setTimeout(() => interaction.deleteReply().catch(() => {}), ttl);
+}
+
 async function handleCommand(interaction) {
   if (interaction.commandName === "setup") {
     await interaction.deferReply({ ephemeral: true });
@@ -239,6 +245,17 @@ async function handleCommand(interaction) {
 async function handleButton(interaction) {
   if (interaction.customId === "verify_member" || interaction.customId === "start_registration") {
     await showNameRegistrationModal(interaction);
+    return;
+  }
+
+  if (interaction.customId === "continue_registration_referral") {
+    const registration = pendingRegistrations.get(interaction.user.id);
+    if (!registration?.nickname || !registration?.interest) {
+      await sendTemporaryInteractionReply(interaction, "Seu registro expirou. Comece de novo pelo canal connect.");
+      return;
+    }
+
+    await showReferralRegistrationModal(interaction);
     return;
   }
 
@@ -293,13 +310,23 @@ async function handleSelectMenu(interaction) {
   if (interaction.customId === "registration_interest") {
     const registration = pendingRegistrations.get(interaction.user.id);
     if (!registration) {
-      await interaction.reply({ content: "Comece pelo botao de registro no canal connect.", ephemeral: true });
+      await sendTemporaryInteractionReply(interaction, "Comece pelo botao de registro no canal connect.");
       return;
     }
 
     registration.interest = interaction.values[0];
     pendingRegistrations.set(interaction.user.id, registration);
-    await showReferralRegistrationModal(interaction);
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("continue_registration_referral")
+        .setLabel("Continuar registro")
+        .setStyle(ButtonStyle.Primary)
+    );
+
+    await interaction.update({
+      content: `Perfeito, **${registration.interest}**. Agora falta so contar como voce conheceu a ${config.shopName}.`,
+      components: [row],
+    });
     return;
   }
 
@@ -330,7 +357,7 @@ async function handleModalSubmit(interaction) {
   if (interaction.customId === "registration_name") {
     const nickname = interaction.fields.getTextInputValue("registration_nickname").trim();
     if (!nickname) {
-      await interaction.reply({ content: "O nome/nickname nao pode ficar em branco.", ephemeral: true });
+      await sendTemporaryInteractionReply(interaction, "O nome/nickname nao pode ficar em branco.");
       return;
     }
 
@@ -354,19 +381,20 @@ async function handleModalSubmit(interaction) {
       components: [new ActionRowBuilder().addComponents(interestMenu)],
       ephemeral: true,
     });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 120_000);
     return;
   }
 
   if (interaction.customId === "registration_referral") {
     const referral = interaction.fields.getTextInputValue("registration_referral_answer").trim();
     if (!referral) {
-      await interaction.reply({ content: "Essa resposta nao pode ficar em branco.", ephemeral: true });
+      await sendTemporaryInteractionReply(interaction, "Essa resposta nao pode ficar em branco.");
       return;
     }
 
     const registration = pendingRegistrations.get(interaction.user.id);
     if (!registration?.nickname || !registration?.interest) {
-      await interaction.reply({ content: "Seu registro expirou. Comece de novo pelo canal connect.", ephemeral: true });
+      await sendTemporaryInteractionReply(interaction, "Seu registro expirou. Comece de novo pelo canal connect.");
       return;
     }
 
@@ -374,7 +402,7 @@ async function handleModalSubmit(interaction) {
     await interaction.member.roles.add(role);
     pendingRegistrations.delete(interaction.user.id);
 
-    await interaction.reply({
+    await sendTemporaryInteractionReply(interaction, {
       content: `Registro concluido. Bem-vindo(a) a **${config.shopName}**, ${registration.nickname}.`,
       ephemeral: true,
     });
@@ -907,10 +935,11 @@ async function sendTicketDm(user, title, description) {
   await user.send({ embeds: [embed] }).catch(() => {});
 }
 
-function buildStoreEmbed() {
+function buildStoreEmbed(options = {}) {
   const embed = new EmbedBuilder().setColor(0xf0a6ff).setTimestamp();
+  const imageUrl = options.imageUrl === undefined ? config.bannerUrl : options.imageUrl;
   if (config.logoUrl) embed.setThumbnail(config.logoUrl);
-  if (config.bannerUrl) embed.setImage(config.bannerUrl);
+  if (imageUrl) embed.setImage(imageUrl);
   return embed;
 }
 

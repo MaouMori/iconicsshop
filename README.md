@@ -31,6 +31,7 @@ DISCORD_GUILD_ID=id_do_servidor
 SHOP_NAME=Iconics Store
 SHOP_LOGO_URL=https://link-da-logo.png
 SHOP_BANNER_URL=https://link-do-banner.png
+WELCOME_BANNER_URL=https://link-do-banner-de-boas-vindas.png
 MERCADO_PAGO_ACCESS_TOKEN=token_do_mercado_pago
 ```
 

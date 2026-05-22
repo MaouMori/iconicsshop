@@ -62,6 +62,7 @@ module.exports = {
   shopName,
   logoUrl: process.env.SHOP_LOGO_URL || null,
   bannerUrl: process.env.SHOP_BANNER_URL || null,
+  welcomeBannerUrl: process.env.WELCOME_BANNER_URL || process.env.SHOP_BANNER_URL || null,
   verifiedRoleName: "Cliente",
   staffRoleName: "Equipe Loja",
   welcomeChannelName: "boas-vindas",
