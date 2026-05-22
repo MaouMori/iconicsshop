@@ -18,6 +18,7 @@ const config = require("./config");
 
 const pendingPayments = new Map();
 const pendingRegistrations = new Map();
+const pendingTicketRequests = new Map();
 const TEMP_MESSAGE_MS = 10_000;
 
 const client = new Client({
@@ -94,6 +95,16 @@ client.on(Events.MessageCreate, async (message) => {
       await handleNotifyTicketCommand(message, content);
       return;
     }
+
+    if (command === "!assumir") {
+      await handleClaimTicketCommand(message);
+      return;
+    }
+
+    if (command === "!finalizar" || command === "!fechar") {
+      await handleFinalizeTicketCommand(message, content);
+      return;
+    }
   } catch (error) {
     console.error(error);
     await sendTemporaryReply(message, "Algo deu errado ao executar esse comando. Veja os logs do bot.").catch(() => {});
@@ -164,7 +175,9 @@ async function sendHelp(message) {
           "`!painel-tickets` - Envia o painel de tickets.",
           "`!painel-verificacao` - Envia o painel de liberacao.",
           "`!add @pessoa` - Adiciona alguem ao ticket.",
+          "`!assumir` - Marca que voce assumiu o ticket.",
           "`!notificar mensagem` - Envia DM estilizada para participantes do ticket.",
+          "`!finalizar motivo` - Finaliza o ticket e envia avisos.",
           "`!cobrar 10,00` - Gera Pix dentro de um ticket.",
         ].join("\n"),
       },
@@ -267,11 +280,6 @@ async function handleButton(interaction) {
 
     await interaction.channel.setTopic(updateTopicValue(interaction.channel.topic, "Assumido", interaction.user.id));
     await interaction.reply(`${interaction.user} assumiu este ticket.`);
-    await notifyTicketParticipants(
-      interaction.channel,
-      "Ticket assumido",
-      `Seu ticket foi assumido por **${interaction.user.tag}**. A equipe ja esta cuidando de voce.`
-    );
     await logTicketEvent(interaction.guild, "Ticket assumido", `${interaction.user} assumiu ${interaction.channel}.`);
     return;
   }
@@ -332,10 +340,9 @@ async function handleSelectMenu(interaction) {
 
   if (interaction.customId !== "ticket_category") return;
 
-  await interaction.deferReply({ ephemeral: true });
   const ticketType = config.ticketTypes.find((type) => type.id === interaction.values[0]);
   if (!ticketType) {
-    await interaction.editReply("Categoria de ticket invalida.");
+    await sendTemporaryInteractionReply(interaction, "Categoria de ticket invalida.");
     return;
   }
 
@@ -344,13 +351,12 @@ async function handleSelectMenu(interaction) {
   });
 
   if (existingTicket) {
-    await interaction.editReply(`Voce ja tem um ticket aberto para essa categoria: ${existingTicket}.`);
+    await sendTemporaryInteractionReply(interaction, `Voce ja tem um ticket aberto para essa categoria: ${existingTicket}.`);
     return;
   }
 
-  const ticketChannel = await createTicketChannel(interaction, ticketType);
-  await interaction.editReply(`Ticket criado: ${ticketChannel}`);
-  setTimeout(() => interaction.deleteReply().catch(() => {}), TEMP_MESSAGE_MS);
+  pendingTicketRequests.set(interaction.user.id, { ticketType });
+  await showTicketSubjectModal(interaction, ticketType);
 }
 
 async function handleModalSubmit(interaction) {
@@ -417,6 +423,26 @@ async function handleModalSubmit(interaction) {
         `Como conheceu/indicacao: ${referral}`,
       ].join("\n")
     );
+  }
+
+  if (interaction.customId === "ticket_subject") {
+    const pendingTicket = pendingTicketRequests.get(interaction.user.id);
+    if (!pendingTicket?.ticketType) {
+      await sendTemporaryInteractionReply(interaction, "Seu pedido de ticket expirou. Escolha a categoria de novo.");
+      return;
+    }
+
+    const subject = interaction.fields.getTextInputValue("ticket_subject_text").trim();
+    if (!subject) {
+      await sendTemporaryInteractionReply(interaction, "O assunto do ticket nao pode ficar em branco.");
+      return;
+    }
+
+    pendingTicketRequests.delete(interaction.user.id);
+    await interaction.deferReply({ ephemeral: true });
+    const ticketChannel = await createTicketChannel(interaction, pendingTicket.ticketType, subject);
+    await interaction.editReply(`Ticket criado: ${ticketChannel}`);
+    setTimeout(() => interaction.deleteReply().catch(() => {}), TEMP_MESSAGE_MS);
   }
 }
 
@@ -587,6 +613,24 @@ async function showReferralRegistrationModal(interaction) {
   await interaction.showModal(modal);
 }
 
+async function showTicketSubjectModal(interaction, ticketType) {
+  const modal = new ModalBuilder()
+    .setCustomId("ticket_subject")
+    .setTitle(`Ticket - ${ticketType.label}`);
+
+  const subjectInput = new TextInputBuilder()
+    .setCustomId("ticket_subject_text")
+    .setLabel("O que voce busca nessa categoria?")
+    .setPlaceholder("Conte seu pedido, duvida, referencia ou problema com detalhes.")
+    .setMinLength(5)
+    .setMaxLength(600)
+    .setRequired(true)
+    .setStyle(TextInputStyle.Paragraph);
+
+  modal.addComponents(new ActionRowBuilder().addComponents(subjectInput));
+  await interaction.showModal(modal);
+}
+
 async function sendTicketPanel(channel) {
   const embed = new EmbedBuilder()
     .setColor(0x8b5cf6)
@@ -630,7 +674,7 @@ async function sendTicketPanel(channel) {
   });
 }
 
-async function createTicketChannel(interaction, ticketType) {
+async function createTicketChannel(interaction, ticketType, subject) {
   const guild = interaction.guild;
   const staffRole = await ensureRole(guild, config.staffRoleName);
   const category = await ensureCategory(guild, config.ticketCategoryName, [
@@ -669,36 +713,29 @@ async function createTicketChannel(interaction, ticketType) {
     reason: `Ticket ${ticketType.label} criado por ${interaction.user.tag}`,
   });
 
-  const embed = new EmbedBuilder()
-    .setColor(0x2f33ff)
-    .setTitle(ticketType.label)
+  const embed = buildStoreEmbed({ imageUrl: config.ticketHeaderImageUrl })
+    .setColor(0x8b5cf6)
+    .setTitle("Ticket aberto")
     .setDescription(
       [
         `${interaction.user}, obrigado por abrir um ticket.`,
-        "Explique o que voce precisa com o maximo de detalhes possivel para a equipe agilizar o atendimento.",
+        "A equipe vai analisar seu pedido e responder por aqui.",
       ].join("\n")
     )
     .addFields(
       { name: "Cliente", value: `${interaction.user}`, inline: true },
       { name: "Categoria", value: ticketType.label, inline: true },
-      { name: "Status", value: "Aguardando atendimento", inline: true }
+      { name: "Status", value: "Aguardando atendimento", inline: true },
+      { name: "Assunto", value: subject.slice(0, 1024), inline: false }
     )
     .setTimestamp();
-
-  const actions = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("claim_ticket").setLabel("Assumir").setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId("notify_ticket_owner").setLabel("Notificar cliente").setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId("close_ticket").setLabel("Finalizar").setStyle(ButtonStyle.Danger)
-  );
 
   await channel.send({
     content: `${interaction.user} <@&${staffRole.id}>`,
     embeds: [embed],
-    components: [actions],
   });
 
-  await logTicketEvent(guild, "Ticket criado", `${interaction.user} abriu ${channel} em ${ticketType.label}.`);
-  await notifyTicketParticipants(channel, "Ticket criado", `Seu ticket **#${channel.name}** foi criado. Nossa equipe vai te atender por la.`);
+  await logTicketEvent(guild, "Ticket criado", `${interaction.user} abriu ${channel} em ${ticketType.label}.\nAssunto: ${subject}`);
 
   return channel;
 }
@@ -737,9 +774,47 @@ async function handleAddTicketMemberCommand(message) {
     ],
   });
 
-  await sendTicketDm(member.user, "Voce foi adicionado(a) a um ticket", `Voce foi adicionado(a) ao ticket **#${message.channel.name}** na ${config.shopName}.`);
   await logTicketEvent(message.guild, "Pessoa adicionada ao ticket", `${message.author} adicionou ${member} em ${message.channel}.`);
   setTimeout(() => message.delete().catch(() => {}), TEMP_MESSAGE_MS);
+}
+
+async function handleClaimTicketCommand(message) {
+  if (!message.channel.topic?.includes("Dono:")) {
+    await sendTemporaryReply(message, "Use `!assumir` dentro de um canal de ticket.");
+    return;
+  }
+
+  if (!isStaffMember(message.member)) {
+    await sendTemporaryReply(message, "Apenas a equipe pode assumir tickets.");
+    return;
+  }
+
+  await message.channel.setTopic(updateTopicValue(message.channel.topic, "Assumido", message.author.id));
+  await message.channel.send({
+    embeds: [
+      buildStoreEmbed({ imageUrl: null })
+        .setTitle("Ticket assumido")
+        .setDescription(`${message.author} assumiu este atendimento.`),
+    ],
+  });
+  await logTicketEvent(message.guild, "Ticket assumido", `${message.author} assumiu ${message.channel}.`);
+  setTimeout(() => message.delete().catch(() => {}), TEMP_MESSAGE_MS);
+}
+
+async function handleFinalizeTicketCommand(message, content) {
+  if (!message.channel.topic?.includes("Dono:")) {
+    await sendTemporaryReply(message, "Use `!finalizar motivo` dentro de um canal de ticket.");
+    return;
+  }
+
+  if (!isStaffMember(message.member)) {
+    await sendTemporaryReply(message, "Apenas a equipe pode finalizar tickets por comando.");
+    return;
+  }
+
+  const reason = content.replace(/^!(finalizar|fechar)\s*/i, "").trim() || "Atendimento finalizado pela equipe";
+  await message.channel.send("Ticket finalizado. Vou salvar os logs e apagar este canal em 8 segundos.");
+  await finalizeTicket(message.channel, message.author, reason);
 }
 
 async function handleNotifyTicketCommand(message, content) {
@@ -863,11 +938,6 @@ async function checkPendingPayments() {
         if (!channel) continue;
 
         await channel.send("Pagamento aprovado. Vou finalizar este ticket automaticamente.");
-        await notifyTicketParticipants(
-          channel,
-          "Pagamento aprovado",
-          `Seu pagamento de R$ ${payment.amount.toFixed(2)} foi aprovado e o ticket sera finalizado.`
-        );
         await logTicketEvent(guild, "Pix aprovado", `Pagamento ${paymentId} aprovado em ${channel}.`);
         await finalizeTicket(channel, client.user, `Pagamento Pix aprovado: ${paymentId}`);
       }
@@ -915,19 +985,19 @@ async function notifyTicketOwner(channel, message) {
   await sendTicketDm(user, "Atualizacao do ticket", message);
 }
 
-async function notifyTicketParticipants(channel, title, description) {
+async function notifyTicketParticipants(channel, title, description, options = {}) {
   const ids = getTicketMemberIds(channel);
   await Promise.all(
     ids.map(async (id) => {
       const user = await client.users.fetch(id).catch(() => null);
       if (!user) return;
-      await sendTicketDm(user, title, description);
+      await sendTicketDm(user, title, description, options);
     })
   );
 }
 
-async function sendTicketDm(user, title, description) {
-  const embed = buildStoreEmbed()
+async function sendTicketDm(user, title, description, options = {}) {
+  const embed = buildStoreEmbed({ imageUrl: options.imageUrl })
     .setTitle(title)
     .setDescription(description)
     .setFooter({ text: `${config.shopName} - atendimento` });
@@ -1029,7 +1099,8 @@ async function finalizeTicket(channel, closedBy, reason) {
       "",
       `**Motivo:** ${reason}`,
       "Obrigadinho por entrar em contato com a gente. A Iconics Store fica feliz em te atender.",
-    ].join("\n")
+    ].join("\n"),
+    { imageUrl: config.ticketClosedImageUrl }
   );
   setTimeout(() => channel.delete(reason).catch(() => {}), 8000);
 }
