@@ -457,48 +457,48 @@ async function setupGuild(guild) {
 
   const publicCategory = await ensureCategory(guild, config.publicCategoryName, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel] },
-  ]);
+  ], ["boas vindas", "Entrada"]);
 
   const storeCategory = await ensureCategory(guild, config.storeCategoryName, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: verifiedRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ReadMessageHistory] },
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.ManageMessages] },
-  ]);
+  ], ["Iconics Store", "Loja"]);
 
   const ticketCategory = await ensureCategory(guild, config.ticketCategoryName, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
-  ]);
+  ], ["Tickets"]);
 
   const welcomeChannel = await ensureTextChannel(guild, config.welcomeChannelName, publicCategory.id, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
-  ]);
+  ], ["boas-vindas"]);
 
   const connectChannel = await ensureTextChannel(guild, config.connectChannelName, publicCategory.id, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
     { id: staffRole.id, allow: [PermissionFlagsBits.SendMessages] },
-  ]);
+  ], ["connect"]);
 
   await ensureTextChannel(guild, config.partnershipsChannelName, publicCategory.id, [
     { id: everyone.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
     { id: staffRole.id, allow: [PermissionFlagsBits.SendMessages] },
-  ]);
+  ], ["parcerias"]);
 
-  await ensureTextChannel(guild, config.infoChannelName, storeCategory.id);
+  await ensureTextChannel(guild, config.infoChannelName, storeCategory.id, undefined, ["sobre-nos", "sobre-a-loja"]);
   const ticketPanelChannel = await ensureTextChannel(guild, config.ticketPanelChannelName, storeCategory.id, [
     { id: verifiedRole.id, allow: [PermissionFlagsBits.ViewChannel], deny: [PermissionFlagsBits.SendMessages] },
     { id: staffRole.id, allow: [PermissionFlagsBits.SendMessages] },
-  ]);
+  ], ["ticket", "atendimento"]);
 
   await ensureTextChannel(guild, config.ticketLogsChannelName, ticketCategory.id, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-  ]);
+  ], ["logs-tickets"]);
 
   await ensureTextChannel(guild, config.registrationLogsChannelName, ticketCategory.id, [
     { id: everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
-  ]);
+  ], ["logs-registros"]);
 
   return { welcomeChannel, connectChannel, ticketPanelChannel, ticketCategory, verifiedRole, staffRole };
 }
@@ -509,9 +509,10 @@ async function ensureRole(guild, name, options = {}) {
   return guild.roles.create({ name, reason: `Cargo criado para ${config.shopName}`, ...options });
 }
 
-async function ensureCategory(guild, name, permissionOverwrites = []) {
-  const existing = guild.channels.cache.find((channel) => channel.name === name && channel.type === ChannelType.GuildCategory);
+async function ensureCategory(guild, name, permissionOverwrites = [], aliases = []) {
+  const existing = findChannelByNames(guild, [name, ...aliases], ChannelType.GuildCategory);
   if (existing) {
+    if (existing.name !== name) await existing.setName(name).catch(() => {});
     if (permissionOverwrites.length > 0) await existing.permissionOverwrites.set(permissionOverwrites);
     return existing;
   }
@@ -524,10 +525,11 @@ async function ensureCategory(guild, name, permissionOverwrites = []) {
   });
 }
 
-async function ensureTextChannel(guild, name, parentId, permissionOverwrites) {
-  const existing = guild.channels.cache.find((channel) => channel.name === name && channel.type === ChannelType.GuildText);
+async function ensureTextChannel(guild, name, parentId, permissionOverwrites, aliases = []) {
+  const existing = findChannelByNames(guild, [name, ...aliases], ChannelType.GuildText);
   if (existing) {
     const edits = {};
+    if (existing.name !== name) edits.name = name;
     if (parentId && existing.parentId !== parentId) edits.parent = parentId;
     if (Object.keys(edits).length > 0) await existing.edit(edits);
     if (permissionOverwrites?.length > 0) await existing.permissionOverwrites.set(permissionOverwrites);
@@ -541,6 +543,20 @@ async function ensureTextChannel(guild, name, parentId, permissionOverwrites) {
     permissionOverwrites,
     reason: `Canal criado para ${config.shopName}`,
   });
+}
+
+function findChannelByNames(guild, names, type) {
+  const normalizedNames = names.map(normalizeDiscordName);
+  return guild.channels.cache.find((channel) => {
+    return channel.type === type && normalizedNames.includes(normalizeDiscordName(channel.name));
+  });
+}
+
+function normalizeDiscordName(name) {
+  return name
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}-]+/gu, "")
+    .replace(/^[-\s]+|[-\s]+$/g, "");
 }
 
 async function sendVerificationPanel(channel) {
@@ -685,7 +701,7 @@ async function createTicketChannel(interaction, ticketType, subject) {
   const category = await ensureCategory(guild, config.ticketCategoryName, [
     { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: staffRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels] },
-  ]);
+  ], ["Tickets"]);
 
   const safeName = interaction.user.username.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 16) || "cliente";
   const channel = await guild.channels.create({

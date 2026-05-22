@@ -53,13 +53,12 @@ npm start
 
 - Cargo `Cliente`.
 - Cargo `Equipe Loja`.
-- Categoria `Entrada` com `boas-vindas` e `parcerias`.
-- Canal `connect` para registro de novos membros.
-- Categoria `Loja` visivel apenas para clientes liberados.
-- Canal `atendimento` com o painel de tickets.
-- Categoria `Tickets` para os tickets abertos.
-- Canal `logs-tickets` para logs e transcripts.
-- Canal `logs-registros` para registros de entrada.
+- Categoria `💜┊boas vindas` com `💜┊boas-vindas`, `💜┊connect` e `💜┊parcerias`.
+- Categoria `💜┊Iconics Store` visivel apenas para clientes liberados.
+- Canal `🎟️┊ticket` com o painel de tickets.
+- Categoria `🎟️┊Tickets` para tickets e logs.
+- Canal `📋┊logs-tickets` para logs e transcripts.
+- Canal `📝┊logs-registros` para registros de entrada.
 
 ## Comandos
 
