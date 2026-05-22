@@ -407,7 +407,7 @@ async function handleModalSubmit(interaction) {
 
     const role = await ensureRole(interaction.guild, config.verifiedRoleName);
     const addedRole = await interaction.member.roles.add(role).then(() => true).catch((error) => {
-      console.error("Nao consegui adicionar cargo no registro:", error);
+      console.error(`Nao consegui adicionar o cargo ${role.name}. Verifique se o cargo do bot esta acima dele. Codigo: ${error.code || "sem-codigo"}`);
       return false;
     });
 
