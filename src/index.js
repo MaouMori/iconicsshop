@@ -41,6 +41,23 @@ client.on(Events.MessageCreate, async (message) => {
     const content = message.content.trim();
     const command = content.split(/\s+/)[0]?.toLowerCase();
 
+    if (message.channel.topic?.includes("Dono:") && isStaffMember(message.member)) {
+      const assigneeId = getTicketAssigneeId(message.channel);
+      const allowedBeforeClaim = command === "!assumir";
+      const isCurrentAssignee = assigneeId === message.author.id;
+      const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
+
+      if (!assigneeId && !allowedBeforeClaim) {
+        await sendTemporaryReply(message, "A equipe precisa assumir este ticket com `!assumir` antes de enviar mensagens.");
+        return;
+      }
+
+      if (assigneeId && !isCurrentAssignee && !isAdmin && !command?.startsWith("!")) {
+        await sendTemporaryReply(message, `Este ticket foi assumido por <@${assigneeId}>.`);
+        return;
+      }
+    }
+
     if (command === "!help") {
       await sendHelp(message);
       return;
@@ -751,6 +768,8 @@ async function handleAddTicketMemberCommand(message) {
     return;
   }
 
+  if (!(await canUseStaffTicketCommand(message))) return;
+
   const member = message.mentions.members.first();
   if (!member) {
     await sendTemporaryReply(message, "Use assim: `!add @pessoa`.");
@@ -789,14 +808,17 @@ async function handleClaimTicketCommand(message) {
     return;
   }
 
-  await message.channel.setTopic(updateTopicValue(message.channel.topic, "Assumido", message.author.id));
-  await message.channel.send({
-    embeds: [
-      buildStoreEmbed({ imageUrl: null })
-        .setTitle("Ticket assumido")
-        .setDescription(`${message.author} assumiu este atendimento.`),
-    ],
+  let topic = updateTopicValue(message.channel.topic, "Assumido", message.author.id);
+  topic = updateTopicValue(topic, "Status", "assumido");
+  await message.channel.setTopic(topic);
+  await message.channel.permissionOverwrites.edit(message.author.id, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+    ManageMessages: true,
   });
+  await updateTicketHeaderStatus(message.channel, "Assumido", message.author);
   await logTicketEvent(message.guild, "Ticket assumido", `${message.author} assumiu ${message.channel}.`);
   setTimeout(() => message.delete().catch(() => {}), TEMP_MESSAGE_MS);
 }
@@ -811,6 +833,8 @@ async function handleFinalizeTicketCommand(message, content) {
     await sendTemporaryReply(message, "Apenas a equipe pode finalizar tickets por comando.");
     return;
   }
+
+  if (!(await canUseStaffTicketCommand(message))) return;
 
   const reason = content.replace(/^!(finalizar|fechar)\s*/i, "").trim() || "Atendimento finalizado pela equipe";
   await message.channel.send("Ticket finalizado. Vou salvar os logs e apagar este canal em 8 segundos.");
@@ -827,6 +851,8 @@ async function handleNotifyTicketCommand(message, content) {
     await sendTemporaryReply(message, "Apenas a equipe pode notificar participantes do ticket.");
     return;
   }
+
+  if (!(await canUseStaffTicketCommand(message))) return;
 
   const customMessage = content.replace(/^!(notify|notificar)\s*/i, "").trim();
   const description = customMessage || `A equipe respondeu seu ticket **#${message.channel.name}**. Da uma olhadinha quando puder.`;
@@ -953,6 +979,51 @@ function isStaffMember(member) {
 
 function getTicketOwnerId(channel) {
   return channel.topic?.match(/Dono: (\d+)/)?.[1] || null;
+}
+
+function getTicketAssigneeId(channel) {
+  const assignee = channel.topic?.match(/Assumido: ([^|]+)/)?.[1]?.trim();
+  if (!assignee || assignee === "nenhum") return null;
+  return assignee;
+}
+
+async function canUseStaffTicketCommand(message) {
+  const assigneeId = getTicketAssigneeId(message.channel);
+  if (!assigneeId) {
+    await sendTemporaryReply(message, "Antes de usar comandos de equipe neste ticket, alguem precisa assumir com `!assumir`.");
+    return false;
+  }
+
+  if (assigneeId !== message.author.id && !message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    await sendTemporaryReply(message, `Este ticket ja foi assumido por <@${assigneeId}>.`);
+    return false;
+  }
+
+  return true;
+}
+
+async function updateTicketHeaderStatus(channel, status, assigneeUser) {
+  const messages = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+  if (!messages) return;
+
+  const header = messages
+    .filter((message) => message.author.id === client.user.id && message.embeds.length > 0)
+    .find((message) => message.embeds[0]?.title === "Ticket aberto");
+
+  if (!header) return;
+
+  const oldEmbed = header.embeds[0];
+  const fields = oldEmbed.fields.map((field) => {
+    if (field.name === "Status") {
+      return { name: "Status", value: status, inline: true };
+    }
+    return { name: field.name, value: field.value, inline: field.inline };
+  });
+
+  fields.splice(3, 0, { name: "Assumido por", value: `${assigneeUser}`, inline: true });
+
+  const embed = EmbedBuilder.from(oldEmbed).setFields(fields).setColor(0x2da160);
+  await header.edit({ embeds: [embed] }).catch(() => {});
 }
 
 function getTicketMemberIds(channel) {
