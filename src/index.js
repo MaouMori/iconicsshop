@@ -406,7 +406,19 @@ async function handleModalSubmit(interaction) {
     }
 
     const role = await ensureRole(interaction.guild, config.verifiedRoleName);
-    await interaction.member.roles.add(role);
+    const addedRole = await interaction.member.roles.add(role).then(() => true).catch((error) => {
+      console.error("Nao consegui adicionar cargo no registro:", error);
+      return false;
+    });
+
+    if (!addedRole) {
+      await sendTemporaryInteractionReply(interaction, {
+        content: "Registro recebido, mas eu nao consegui dar o cargo de acesso. Coloque meu cargo acima do cargo Cliente e ative Gerenciar cargos.",
+        ephemeral: true,
+      }, 20_000);
+      return;
+    }
+
     pendingRegistrations.delete(interaction.user.id);
 
     await sendTemporaryInteractionReply(interaction, {
