@@ -21,6 +21,15 @@ const pendingRegistrations = new Map();
 const pendingTicketRequests = new Map();
 const TEMP_MESSAGE_MS = 10_000;
 
+process.on("unhandledRejection", (error) => {
+  if (error?.code === 50013) {
+    console.error("Permissao ausente no Discord. Confira hierarquia do cargo do bot e permissoes.");
+    return;
+  }
+
+  console.error("Erro nao tratado:", error);
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -405,11 +414,20 @@ async function handleModalSubmit(interaction) {
       return;
     }
 
-    const role = await ensureRole(interaction.guild, config.verifiedRoleName);
-    const addedRole = await interaction.member.roles.add(role).then(() => true).catch((error) => {
-      console.error(`Nao consegui adicionar o cargo ${role.name}. Verifique se o cargo do bot esta acima dele. Codigo: ${error.code || "sem-codigo"}`);
-      return false;
+    const role = await ensureRole(interaction.guild, config.verifiedRoleName).catch((error) => {
+      console.error(`Nao consegui criar/encontrar cargo ${config.verifiedRoleName}. Codigo: ${error.code || "sem-codigo"}`);
+      return null;
     });
+
+    if (!role) {
+      await sendTemporaryInteractionReply(interaction, {
+        content: "Registro recebido, mas nao consegui preparar o cargo Cliente. Confira se eu tenho permissao para gerenciar cargos.",
+        ephemeral: true,
+      }, 20_000);
+      return;
+    }
+
+    const addedRole = await addRoleSafely(interaction.member, role);
 
     if (!addedRole) {
       await sendTemporaryInteractionReply(interaction, {
@@ -457,6 +475,13 @@ async function handleModalSubmit(interaction) {
     await interaction.editReply(`Ticket criado: ${ticketChannel}`);
     setTimeout(() => interaction.deleteReply().catch(() => {}), TEMP_MESSAGE_MS);
   }
+}
+
+async function addRoleSafely(member, role) {
+  return member.roles.add(role).then(() => true).catch((error) => {
+      console.error(`Nao consegui adicionar o cargo ${role.name}. Verifique se o cargo do bot esta acima dele. Codigo: ${error.code || "sem-codigo"}`);
+      return false;
+    });
 }
 
 async function setupGuild(guild) {
