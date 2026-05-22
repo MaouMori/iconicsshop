@@ -84,10 +84,41 @@ client.on(Events.MessageCreate, async (message) => {
       await handlePaymentCommand(message, content);
       return;
     }
+
+    if (command === "!add" || command === "!adicionar") {
+      await handleAddTicketMemberCommand(message);
+      return;
+    }
+
+    if (command === "!notify" || command === "!notificar") {
+      await handleNotifyTicketCommand(message, content);
+      return;
+    }
   } catch (error) {
     console.error(error);
     await sendTemporaryReply(message, "Algo deu errado ao executar esse comando. Veja os logs do bot.").catch(() => {});
   }
+});
+
+client.on(Events.GuildMemberAdd, async (member) => {
+  const welcomeChannel = member.guild.channels.cache.find((channel) => channel.name === config.welcomeChannelName && channel.type === ChannelType.GuildText);
+  if (!welcomeChannel) return;
+
+  const embed = buildStoreEmbed()
+    .setTitle(`Bem-vindo(a) a ${config.shopName}`)
+    .setDescription(
+      [
+        `${member}, que bom ter voce por aqui.`,
+        "",
+        "Antes de explorar a loja, passe no canal **connect** e faca seu registro rapidinho.",
+        "Prometo que e coisa fofa e leva menos de um minutinho.",
+        "",
+        "**Depois do registro voce recebe acesso aos canais da loja.**",
+      ].join("\n")
+    )
+    .setFooter({ text: `${config.shopName} - seja bem-vindo(a)` });
+
+  await welcomeChannel.send({ content: `${member}`, embeds: [embed] }).catch(() => {});
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -138,6 +169,8 @@ async function sendHelp(message) {
           "`!setup` - Cria cargos, canais, logs e paineis.",
           "`!painel-tickets` - Envia o painel de tickets.",
           "`!painel-verificacao` - Envia o painel de liberacao.",
+          "`!add @pessoa` - Adiciona alguem ao ticket.",
+          "`!notificar mensagem` - Envia DM estilizada para participantes do ticket.",
           "`!cobrar 10,00` - Gera Pix dentro de um ticket.",
         ].join("\n"),
       },
@@ -217,7 +250,11 @@ async function handleButton(interaction) {
 
     await interaction.channel.setTopic(updateTopicValue(interaction.channel.topic, "Assumido", interaction.user.id));
     await interaction.reply(`${interaction.user} assumiu este ticket.`);
-    await notifyTicketOwner(interaction.channel, `Seu ticket foi assumido por ${interaction.user.tag}.`);
+    await notifyTicketParticipants(
+      interaction.channel,
+      "Ticket assumido",
+      `Seu ticket foi assumido por **${interaction.user.tag}**. A equipe ja esta cuidando de voce.`
+    );
     await logTicketEvent(interaction.guild, "Ticket assumido", `${interaction.user} assumiu ${interaction.channel}.`);
     return;
   }
@@ -228,7 +265,11 @@ async function handleButton(interaction) {
       return;
     }
 
-    await notifyTicketOwner(interaction.channel, `A equipe respondeu seu ticket em #${interaction.channel.name}.`);
+    await notifyTicketParticipants(
+      interaction.channel,
+      "Ticket respondido",
+      `A equipe respondeu seu ticket **#${interaction.channel.name}**. Da uma olhadinha quando puder.`
+    );
     await interaction.reply({ content: "Cliente notificado no privado.", ephemeral: true });
     await logTicketEvent(interaction.guild, "Cliente notificado", `${interaction.user} notificou o dono de ${interaction.channel}.`);
     return;
@@ -574,7 +615,7 @@ async function createTicketChannel(interaction, ticketType) {
     name: `${ticketType.channelPrefix}-${safeName}`,
     type: ChannelType.GuildText,
     parent: category.id,
-    topic: `Dono: ${interaction.user.id} | Tipo: ${ticketType.id} | Status: aberto | Assumido: nenhum`,
+    topic: `Dono: ${interaction.user.id} | Tipo: ${ticketType.id} | Status: aberto | Assumido: nenhum | Membros: nenhum`,
     permissionOverwrites: [
       { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
       {
@@ -629,9 +670,67 @@ async function createTicketChannel(interaction, ticketType) {
   });
 
   await logTicketEvent(guild, "Ticket criado", `${interaction.user} abriu ${channel} em ${ticketType.label}.`);
-  await notifyTicketOwner(channel, `Seu ticket foi criado: #${channel.name}.`);
+  await notifyTicketParticipants(channel, "Ticket criado", `Seu ticket **#${channel.name}** foi criado. Nossa equipe vai te atender por la.`);
 
   return channel;
+}
+
+async function handleAddTicketMemberCommand(message) {
+  if (!message.channel.topic?.includes("Dono:")) {
+    await sendTemporaryReply(message, "Use `!add @pessoa` dentro de um canal de ticket.");
+    return;
+  }
+
+  if (!isStaffMember(message.member)) {
+    await sendTemporaryReply(message, "Apenas a equipe pode adicionar pessoas ao ticket.");
+    return;
+  }
+
+  const member = message.mentions.members.first();
+  if (!member) {
+    await sendTemporaryReply(message, "Use assim: `!add @pessoa`.");
+    return;
+  }
+
+  await message.channel.permissionOverwrites.edit(member.id, {
+    ViewChannel: true,
+    SendMessages: true,
+    ReadMessageHistory: true,
+    AttachFiles: true,
+  });
+
+  message.channel.setTopic(addTicketMemberToTopic(message.channel.topic, member.id)).catch(() => {});
+
+  await message.channel.send({
+    embeds: [
+      buildStoreEmbed()
+        .setTitle("Pessoa adicionada")
+        .setDescription(`${member} foi adicionado(a) a este ticket por ${message.author}.`),
+    ],
+  });
+
+  await sendTicketDm(member.user, "Voce foi adicionado(a) a um ticket", `Voce foi adicionado(a) ao ticket **#${message.channel.name}** na ${config.shopName}.`);
+  await logTicketEvent(message.guild, "Pessoa adicionada ao ticket", `${message.author} adicionou ${member} em ${message.channel}.`);
+  setTimeout(() => message.delete().catch(() => {}), TEMP_MESSAGE_MS);
+}
+
+async function handleNotifyTicketCommand(message, content) {
+  if (!message.channel.topic?.includes("Dono:")) {
+    await sendTemporaryReply(message, "Use `!notificar mensagem` dentro de um canal de ticket.");
+    return;
+  }
+
+  if (!isStaffMember(message.member)) {
+    await sendTemporaryReply(message, "Apenas a equipe pode notificar participantes do ticket.");
+    return;
+  }
+
+  const customMessage = content.replace(/^!(notify|notificar)\s*/i, "").trim();
+  const description = customMessage || `A equipe respondeu seu ticket **#${message.channel.name}**. Da uma olhadinha quando puder.`;
+
+  await notifyTicketParticipants(message.channel, "Ticket respondido", description);
+  await sendTemporaryReply(message, "Participantes notificados no privado.");
+  await logTicketEvent(message.guild, "Participantes notificados", `${message.author} notificou participantes de ${message.channel}.`);
 }
 
 async function handlePaymentCommand(message, content) {
@@ -736,7 +835,11 @@ async function checkPendingPayments() {
         if (!channel) continue;
 
         await channel.send("Pagamento aprovado. Vou finalizar este ticket automaticamente.");
-        await notifyTicketOwner(channel, `Seu pagamento de R$ ${payment.amount.toFixed(2)} foi aprovado e o ticket sera finalizado.`);
+        await notifyTicketParticipants(
+          channel,
+          "Pagamento aprovado",
+          `Seu pagamento de R$ ${payment.amount.toFixed(2)} foi aprovado e o ticket sera finalizado.`
+        );
         await logTicketEvent(guild, "Pix aprovado", `Pagamento ${paymentId} aprovado em ${channel}.`);
         await finalizeTicket(channel, client.user, `Pagamento Pix aprovado: ${paymentId}`);
       }
@@ -754,6 +857,21 @@ function getTicketOwnerId(channel) {
   return channel.topic?.match(/Dono: (\d+)/)?.[1] || null;
 }
 
+function getTicketMemberIds(channel) {
+  const ownerId = getTicketOwnerId(channel);
+  const memberText = channel.topic?.match(/Membros: ([^|]+)/)?.[1]?.trim() || "";
+  const extraIds = memberText === "nenhum" ? [] : memberText.split(",").map((id) => id.trim()).filter(Boolean);
+  return [...new Set([ownerId, ...extraIds].filter(Boolean))];
+}
+
+function addTicketMemberToTopic(topic, memberId) {
+  const current = topic || "";
+  const memberText = current.match(/Membros: ([^|]+)/)?.[1]?.trim() || "nenhum";
+  const ids = memberText === "nenhum" ? [] : memberText.split(",").map((id) => id.trim()).filter(Boolean);
+  if (!ids.includes(memberId)) ids.push(memberId);
+  return updateTopicValue(current, "Membros", ids.join(","));
+}
+
 function updateTopicValue(topic, key, value) {
   const current = topic || "";
   const pattern = new RegExp(`${key}: [^|]+`);
@@ -766,7 +884,34 @@ async function notifyTicketOwner(channel, message) {
   if (!ownerId) return;
   const user = await client.users.fetch(ownerId).catch(() => null);
   if (!user) return;
-  await user.send(message).catch(() => {});
+  await sendTicketDm(user, "Atualizacao do ticket", message);
+}
+
+async function notifyTicketParticipants(channel, title, description) {
+  const ids = getTicketMemberIds(channel);
+  await Promise.all(
+    ids.map(async (id) => {
+      const user = await client.users.fetch(id).catch(() => null);
+      if (!user) return;
+      await sendTicketDm(user, title, description);
+    })
+  );
+}
+
+async function sendTicketDm(user, title, description) {
+  const embed = buildStoreEmbed()
+    .setTitle(title)
+    .setDescription(description)
+    .setFooter({ text: `${config.shopName} - atendimento` });
+
+  await user.send({ embeds: [embed] }).catch(() => {});
+}
+
+function buildStoreEmbed() {
+  const embed = new EmbedBuilder().setColor(0xf0a6ff).setTimestamp();
+  if (config.logoUrl) embed.setThumbnail(config.logoUrl);
+  if (config.bannerUrl) embed.setImage(config.bannerUrl);
+  return embed;
 }
 
 async function logTicketEvent(guild, title, description, files = []) {
@@ -847,7 +992,16 @@ async function finalizeTicket(channel, closedBy, reason) {
     }).catch(() => {});
   }
 
-  await notifyTicketOwner(channel, `Seu ticket #${channel.name} foi finalizado. Obrigado por entrar em contato com a ${config.shopName}.`);
+  await notifyTicketParticipants(
+    channel,
+    "Ticket finalizado",
+    [
+      `O ticket **#${channel.name}** foi finalizado.`,
+      "",
+      `**Motivo:** ${reason}`,
+      "Obrigadinho por entrar em contato com a gente. A Iconics Store fica feliz em te atender.",
+    ].join("\n")
+  );
   setTimeout(() => channel.delete(reason).catch(() => {}), 8000);
 }
 

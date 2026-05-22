@@ -65,6 +65,8 @@ npm start
 !setup
 !painel-tickets
 !painel-verificacao
+!add @pessoa
+!notificar mensagem
 !cobrar 10,00
 ```
 
