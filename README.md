@@ -32,6 +32,7 @@ SHOP_NAME=Iconics Store
 SHOP_LOGO_URL=https://link-da-logo.png
 SHOP_BANNER_URL=https://link-do-banner.png
 WELCOME_BANNER_URL=https://link-do-banner-de-boas-vindas.png
+WELCOME_CHANNEL_ID=id_do_canal_de_boas_vindas
 TICKET_HEADER_IMAGE_URL=https://link-da-imagem-do-cabecalho-do-ticket.png
 TICKET_CLOSED_IMAGE_URL=https://link-da-imagem-de-ticket-finalizado.png
 VERIFIED_ROLE_ID=1506133179356942368

@@ -121,8 +121,12 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 client.on(Events.GuildMemberAdd, async (member) => {
-  const welcomeChannel = member.guild.channels.cache.find((channel) => channel.name === config.welcomeChannelName && channel.type === ChannelType.GuildText);
-  if (!welcomeChannel) return;
+  await member.guild.channels.fetch().catch(() => null);
+  const welcomeChannel = await getWelcomeChannel(member.guild);
+  if (!welcomeChannel) {
+    console.error("Canal de boas-vindas nao encontrado. Configure WELCOME_CHANNEL_ID ou rode !setup.");
+    return;
+  }
 
   const embed = buildStoreEmbed({ imageUrl: config.welcomeBannerUrl })
     .setTitle(`Bem-vindo(a) a ${config.shopName}`)
@@ -138,7 +142,9 @@ client.on(Events.GuildMemberAdd, async (member) => {
     )
     .setFooter({ text: `${config.shopName} - seja bem-vindo(a)` });
 
-  await welcomeChannel.send({ content: `${member}`, embeds: [embed] }).catch(() => {});
+  await welcomeChannel.send({ content: `${member}`, embeds: [embed] }).catch((error) => {
+    console.error(`Nao consegui enviar boas-vindas em ${welcomeChannel.name}. Codigo: ${error.code || "sem-codigo"}`);
+  });
 });
 
 client.on(Events.InteractionCreate, async (interaction) => {
@@ -516,6 +522,26 @@ async function getPostRegistrationChannel(guild) {
   }
 
   return findChannelByNames(guild, [config.infoChannelName, "sobre-nos", "chat-geral"], ChannelType.GuildText) || null;
+}
+
+async function getWelcomeChannel(guild) {
+  if (config.welcomeChannelId) {
+    const channel = await guild.channels.fetch(config.welcomeChannelId).catch(() => null);
+    if (channel?.type === ChannelType.GuildText) return channel;
+  }
+
+  return findChannelByNames(
+    guild,
+    [
+      config.welcomeChannelName,
+      "boas-vindas",
+      "boas vindas",
+      "bem-vindo",
+      "bem-vindos",
+      "welcome",
+    ],
+    ChannelType.GuildText
+  ) || null;
 }
 
 async function setupGuild(guild) {
