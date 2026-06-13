@@ -200,54 +200,62 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 async function sendHelp(message) {
-  const embed = new EmbedBuilder()
-    .setColor(0x2528d8)
-    .setTitle(`Ajuda - ${config.shopName}`)
-    .setDescription("Comandos e funcoes principais do bot da loja.")
+  const embed = buildStoreEmbed({ imageUrl: config.welcomeBannerUrl })
+    .setColor(0x8b5cf6)
+    .setTitle(`Central de Ajuda - ${config.shopName}`)
+    .setDescription(
+      [
+        "Bem-vindo ao painel de comandos da loja.",
+        "Use esta lista para administrar registros, tickets e pagamentos Pix.",
+      ].join("\n")
+    )
     .addFields(
       {
-        name: "Comandos",
+        name: "Primeiros passos",
         value: [
-          "`!help` - Mostra esta mensagem.",
-          "`!setup` - Cria cargos, canais, logs e paineis.",
-          "`!painel-tickets` - Envia o painel de tickets.",
-          "`!painel-verificacao` - Envia o painel de liberacao.",
+          "`!help` - Mostra esta central.",
+          "`!setup` - Ajusta canais, cargos, logs e paineis.",
+          "`!painel-tickets` - Envia o painel de atendimento.",
+          "`!painel-verificacao` - Envia o painel de registro.",
+        ].join("\n"),
+      },
+      {
+        name: "Registro de entrada",
+        value: [
+          "`connect` - Canal onde novos membros fazem registro.",
+          "`logs-registros` - Guarda nome, interesse e indicacao.",
+          "`Cliente` - Cargo liberado ao concluir o registro.",
+        ].join("\n"),
+      },
+      {
+        name: "Atendimento",
+        value: [
           "`!add @pessoa` - Adiciona alguem ao ticket.",
-          "`!assumir` - Marca que voce assumiu o ticket.",
-          "`!notificar mensagem` - Envia DM estilizada para participantes do ticket.",
-          "`!finalizar motivo` - Finaliza o ticket e envia avisos.",
-          "`!cobrar 10,00` - Gera Pix dentro de um ticket.",
-          "`!pix` - Pergunta o valor e gera QR Code Pix.",
+          "`!assumir` - Marca o ticket como assumido.",
+          "`!notificar mensagem` - Envia DM para participantes.",
+          "`!finalizar motivo` - Fecha o ticket e salva transcript.",
         ].join("\n"),
       },
       {
-        name: "Registro",
+        name: "Pagamento Pix",
         value: [
-          "Novos membros entram pelo canal `connect`.",
-          "O registro troca o nickname, pergunta o que a pessoa busca e registra indicacao.",
-          "Depois do registro, o cargo `Cliente` libera a loja.",
+          "`!pix` - Pergunta o valor e gera QR Code.",
+          "`!pix 25,50` - Gera Pix direto com valor.",
+          "`!cobrar 25,50` - Gera Pix dentro do ticket.",
+          "`MERCADO_PAGO_ACCESS_TOKEN` precisa estar configurado.",
         ].join("\n"),
       },
       {
-        name: "Tickets",
+        name: "Logs",
         value: [
-          "Tickets sao privados para o cliente e a equipe.",
-          "A equipe pode assumir, notificar o cliente e finalizar.",
-          "Ao finalizar, o bot salva um transcript em `logs-tickets`.",
-        ].join("\n"),
-      },
-      {
-        name: "Pagamento",
-        value: [
-          "O Pix automatico usa Mercado Pago.",
-          "Configure `MERCADO_PAGO_ACCESS_TOKEN` no host.",
-          "Quando o pagamento for aprovado, o ticket fecha automaticamente.",
+          "`logs-tickets` - Tickets finalizados e transcripts.",
+          "`logs-registros` - Registros de entrada.",
+          "Canais de logs sao privados para a equipe.",
         ].join("\n"),
       }
     )
-    .setFooter({ text: `${config.shopName} - atendimento da loja` });
+    .setFooter({ text: `${config.shopName} - sistema de atendimento` });
 
-  if (config.logoUrl) embed.setThumbnail(config.logoUrl);
   await message.reply({ embeds: [embed] });
 }
 
