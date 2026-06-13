@@ -1136,7 +1136,7 @@ async function handlePaymentCommand(message, content) {
       new EmbedBuilder()
         .setColor(0x2f33ff)
         .setTitle("Pagamento Pix")
-        .setDescription("Copie o codigo Pix abaixo e pague no app do banco. Quando o pagamento for aprovado, o ticket sera finalizado automaticamente.")
+        .setDescription("Copie o codigo Pix abaixo e pague no app do banco. Quando o pagamento for aprovado, a equipe sera avisada para continuar o atendimento.")
         .addFields(
           { name: "Valor", value: `R$ ${amount.toFixed(2)}`, inline: true },
           { name: "Pagamento", value: String(payment.id), inline: true },
@@ -1156,7 +1156,7 @@ async function sendPixPaymentMessage(channel, payment, amount, ownerId) {
   const files = [];
   const embed = buildStoreEmbed({ imageUrl: null })
     .setTitle("Pagamento Pix")
-    .setDescription("Escaneie o QR Code ou copie o codigo Pix abaixo. Quando o pagamento for aprovado, o ticket sera finalizado automaticamente.")
+    .setDescription("Escaneie o QR Code ou copie o codigo Pix abaixo. Quando o pagamento for aprovado, a equipe sera avisada para continuar o atendimento.")
     .addFields(
       { name: "Valor", value: `R$ ${amount.toFixed(2)}`, inline: true },
       { name: "Pagamento", value: String(payment.id), inline: true },
@@ -1230,27 +1230,48 @@ async function checkPendingPayments() {
         const channel = await guild.channels.fetch(payment.channelId).catch(() => null);
         if (!channel) continue;
 
-        await channel.send({
-          embeds: [
-            buildStoreEmbed({ imageUrl: null })
-              .setTitle("Pagamento aprovado")
-              .setDescription(
-                [
-                  `Pix aprovado no valor de **R$ ${payment.amount.toFixed(2)}**.`,
-                  "",
-                  "O ticket permanece aberto para a equipe conferir o pedido.",
-                  "Somente a equipe pode finalizar usando `!finalizar motivo`.",
-                ].join("\n")
-              )
-              .addFields({ name: "Pagamento", value: paymentId, inline: true }),
-          ],
-        });
-        await logTicketEvent(guild, "Pix aprovado", `Pagamento ${paymentId} aprovado em ${channel}. Ticket mantido aberto.`);
+        await notifyPaymentApproved(guild, channel, paymentId, payment.amount);
       }
     } catch (error) {
       console.error("Erro ao verificar Pix pendente:", error);
     }
   }
+}
+
+async function notifyPaymentApproved(guild, channel, paymentId, amount) {
+  const assigneeId = getTicketAssigneeId(channel);
+  const staffRole = guild.roles.cache.find((role) => role.name === config.staffRoleName);
+  const mentionTarget = assigneeId ? `<@${assigneeId}>` : staffRole ? `<@&${staffRole.id}>` : "Equipe";
+  const amountText = `R$ ${amount.toFixed(2)}`;
+
+  await logTicketEvent(
+    guild,
+    "Pix aprovado",
+    [
+      `Pagamento **${paymentId}** aprovado em ${channel}.`,
+      `Valor: **${amountText}**`,
+      `Aviso direcionado para: ${mentionTarget}`,
+      "",
+      "O ticket foi mantido aberto. A equipe deve conferir o pedido e finalizar manualmente com `!finalizar motivo`.",
+    ].join("\n"),
+    [],
+    { content: mentionTarget }
+  );
+
+  if (!assigneeId) return;
+
+  const assigneeUser = await client.users.fetch(assigneeId).catch(() => null);
+  if (!assigneeUser) return;
+
+  await sendTicketDm(
+    assigneeUser,
+    "Pix aprovado",
+    [
+      `O pagamento de **${amountText}** foi aprovado no ticket ${channel}.`,
+      "",
+      "O ticket permanece aberto para voce conferir o pedido e finalizar manualmente quando estiver tudo certo.",
+    ].join("\n")
+  );
 }
 
 function isStaffMember(member) {
@@ -1357,11 +1378,12 @@ function buildStoreEmbed(options = {}) {
   return embed;
 }
 
-async function logTicketEvent(guild, title, description, files = []) {
+async function logTicketEvent(guild, title, description, files = [], options = {}) {
   const logChannel = guild.channels.cache.find((channel) => channel.name === config.ticketLogsChannelName && channel.type === ChannelType.GuildText);
   if (!logChannel) return;
 
   await logChannel.send({
+    content: options.content,
     embeds: [
       new EmbedBuilder()
         .setColor(0x2528d8)
