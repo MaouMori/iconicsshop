@@ -1230,9 +1230,22 @@ async function checkPendingPayments() {
         const channel = await guild.channels.fetch(payment.channelId).catch(() => null);
         if (!channel) continue;
 
-        await channel.send("Pagamento aprovado. Vou finalizar este ticket automaticamente.");
-        await logTicketEvent(guild, "Pix aprovado", `Pagamento ${paymentId} aprovado em ${channel}.`);
-        await finalizeTicket(channel, client.user, `Pagamento Pix aprovado: ${paymentId}`);
+        await channel.send({
+          embeds: [
+            buildStoreEmbed({ imageUrl: null })
+              .setTitle("Pagamento aprovado")
+              .setDescription(
+                [
+                  `Pix aprovado no valor de **R$ ${payment.amount.toFixed(2)}**.`,
+                  "",
+                  "O ticket permanece aberto para a equipe conferir o pedido.",
+                  "Somente a equipe pode finalizar usando `!finalizar motivo`.",
+                ].join("\n")
+              )
+              .addFields({ name: "Pagamento", value: paymentId, inline: true }),
+          ],
+        });
+        await logTicketEvent(guild, "Pix aprovado", `Pagamento ${paymentId} aprovado em ${channel}. Ticket mantido aberto.`);
       }
     } catch (error) {
       console.error("Erro ao verificar Pix pendente:", error);
