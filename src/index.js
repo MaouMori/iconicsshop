@@ -42,6 +42,15 @@ process.on("unhandledRejection", (error) => {
   console.error("Erro nao tratado:", error);
 });
 
+process.on("uncaughtException", (error) => {
+  console.error("Excecao nao tratada:", error);
+});
+
+process.on("SIGTERM", () => {
+  console.error("Recebi SIGTERM do host. O processo foi encerrado externamente.");
+  process.exit(0);
+});
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -1046,11 +1055,13 @@ async function generatePixFromAmountMessage(message, content, pendingPix = null)
   let payment;
   try {
     const ownerId = getTicketOwnerId(message.channel);
+    console.log(`Gerando Pix de R$ ${amount.toFixed(2)} solicitado por ${message.author.tag}.`);
     payment = await createPixPayment({
       amount,
       description: `Pagamento ${config.shopName} - ${message.channel.name}`,
       payerEmail: config.mercadoPagoPayerEmail,
     });
+    console.log(`Pix gerado com sucesso. Payment ID: ${payment.id}`);
 
     pendingPayments.set(String(payment.id), {
       id: String(payment.id),
@@ -1072,8 +1083,8 @@ async function generatePixFromAmountMessage(message, content, pendingPix = null)
     await sendPixPaymentMessage(message.channel, payment, amount, ownerId);
     await logTicketEvent(message.guild, "Pix gerado", `${message.author} gerou Pix de R$ ${amount.toFixed(2)} em ${message.channel}.`);
   } catch (error) {
-    console.error("Erro ao gerar Pix:", error);
-    await message.reply("Nao consegui gerar o Pix. Confira se o token do Mercado Pago esta correto e se sua conta esta habilitada para Pix.");
+    console.error(`Erro ao gerar Pix: ${error.message}`);
+    await message.reply(`Nao consegui gerar o Pix: ${error.message.slice(0, 300)}`);
   }
 }
 
@@ -1175,8 +1186,12 @@ function parseMoneyAmount(value) {
 }
 
 async function createPixPayment({ amount, description, payerEmail }) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+
   const response = await fetch("https://api.mercadopago.com/v1/payments", {
     method: "POST",
+    signal: controller.signal,
     headers: {
       Authorization: `Bearer ${config.mercadoPagoAccessToken}`,
       "Content-Type": "application/json",
@@ -1188,7 +1203,7 @@ async function createPixPayment({ amount, description, payerEmail }) {
       payment_method_id: "pix",
       payer: { email: payerEmail },
     }),
-  });
+  }).finally(() => clearTimeout(timeout));
 
   const data = await response.json();
   if (!response.ok) {
