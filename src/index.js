@@ -103,7 +103,7 @@ client.on(Events.MessageCreate, async (message) => {
     }
 
     if (command === "!pix") {
-      await handlePixPromptCommand(message);
+      await handlePixPromptCommand(message, content);
       return;
     }
 
@@ -970,14 +970,20 @@ async function handleNotifyTicketCommand(message, content) {
   await logTicketEvent(message.guild, "Participantes notificados", `${message.author} notificou participantes de ${message.channel}.`);
 }
 
-async function handlePixPromptCommand(message) {
-  if (!isStaffMember(message.member)) {
-    await sendTemporaryReply(message, "Apenas a equipe pode gerar Pix.");
+async function handlePixPromptCommand(message, content) {
+  if (!canGeneratePix(message.member)) {
+    await message.reply("Apenas equipe/admin pode gerar Pix. Confira se voce tem `Equipe Loja`, `Gerenciar servidor` ou `Administrador`.");
     return;
   }
 
   if (!config.mercadoPagoAccessToken) {
-    await sendTemporaryReply(message, "Pix automatico ainda nao esta configurado. Adicione `MERCADO_PAGO_ACCESS_TOKEN` nas variaveis do host.");
+    await message.reply("Pix automatico ainda nao esta configurado. Adicione `MERCADO_PAGO_ACCESS_TOKEN` nas variaveis do host e reinicie o bot.");
+    return;
+  }
+
+  const inlineAmount = content.replace(/^!pix\s*/i, "").trim();
+  if (inlineAmount) {
+    await generatePixFromAmountMessage(message, inlineAmount);
     return;
   }
 
@@ -1008,39 +1014,48 @@ async function handlePixPromptCommand(message) {
 async function handlePixAmountResponse(message, content) {
   const pendingPix = pendingPixPrompts.get(message.author.id);
   pendingPixPrompts.delete(message.author.id);
+  await generatePixFromAmountMessage(message, content, pendingPix);
+}
 
+async function generatePixFromAmountMessage(message, content, pendingPix = null) {
   const amount = parseMoneyAmount(content);
   if (!Number.isFinite(amount) || amount <= 0) {
-    await sendTemporaryReply(message, "Valor invalido. Use `!pix` novamente e responda algo como `25,50`.");
+    await message.reply("Valor invalido. Use `!pix` novamente e responda algo como `25,50`, ou use direto `!pix 25,50`.");
     return;
   }
 
-  const ownerId = getTicketOwnerId(message.channel);
-  const payment = await createPixPayment({
-    amount,
-    description: `Pagamento ${config.shopName} - ${message.channel.name}`,
-    payerEmail: `${ownerId || message.author.id}@discord.local`,
-  });
+  let payment;
+  try {
+    const ownerId = getTicketOwnerId(message.channel);
+    payment = await createPixPayment({
+      amount,
+      description: `Pagamento ${config.shopName} - ${message.channel.name}`,
+      payerEmail: `${ownerId || message.author.id}@discord.local`,
+    });
 
-  pendingPayments.set(String(payment.id), {
-    id: String(payment.id),
-    channelId: message.channel.id,
-    guildId: message.guild.id,
-    ownerId,
-    amount,
-  });
+    pendingPayments.set(String(payment.id), {
+      id: String(payment.id),
+      channelId: message.channel.id,
+      guildId: message.guild.id,
+      ownerId,
+      amount,
+    });
 
-  await message.delete().catch(() => {});
-  if (pendingPix?.promptMessageId) {
-    const promptMessage = await message.channel.messages.fetch(pendingPix.promptMessageId).catch(() => null);
-    await promptMessage?.delete().catch(() => {});
+    await message.delete().catch(() => {});
+    if (pendingPix?.promptMessageId) {
+      const promptMessage = await message.channel.messages.fetch(pendingPix.promptMessageId).catch(() => null);
+      await promptMessage?.delete().catch(() => {});
+    }
+    if (pendingPix?.commandMessageId) {
+      const commandMessage = await message.channel.messages.fetch(pendingPix.commandMessageId).catch(() => null);
+      await commandMessage?.delete().catch(() => {});
+    }
+    await sendPixPaymentMessage(message.channel, payment, amount, ownerId);
+    await logTicketEvent(message.guild, "Pix gerado", `${message.author} gerou Pix de R$ ${amount.toFixed(2)} em ${message.channel}.`);
+  } catch (error) {
+    console.error("Erro ao gerar Pix:", error);
+    await message.reply("Nao consegui gerar o Pix. Confira se o token do Mercado Pago esta correto e se sua conta esta habilitada para Pix.");
   }
-  if (pendingPix?.commandMessageId) {
-    const commandMessage = await message.channel.messages.fetch(pendingPix.commandMessageId).catch(() => null);
-    await commandMessage?.delete().catch(() => {});
-  }
-  await sendPixPaymentMessage(message.channel, payment, amount, ownerId);
-  await logTicketEvent(message.guild, "Pix gerado", `${message.author} gerou Pix de R$ ${amount.toFixed(2)} em ${message.channel}.`);
 }
 
 async function handlePaymentCommand(message, content) {
@@ -1193,6 +1208,14 @@ async function checkPendingPayments() {
 
 function isStaffMember(member) {
   return member.permissions.has(PermissionFlagsBits.ManageChannels) || member.roles.cache.some((role) => role.name === config.staffRoleName);
+}
+
+function canGeneratePix(member) {
+  return (
+    member.permissions.has(PermissionFlagsBits.Administrator) ||
+    member.permissions.has(PermissionFlagsBits.ManageGuild) ||
+    isStaffMember(member)
+  );
 }
 
 function getTicketOwnerId(channel) {
