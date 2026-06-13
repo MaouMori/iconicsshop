@@ -19,6 +19,7 @@ const config = require("./config");
 const pendingPayments = new Map();
 const pendingRegistrations = new Map();
 const pendingTicketRequests = new Map();
+const pendingPixPrompts = new Map();
 const TEMP_MESSAGE_MS = 10_000;
 
 process.on("unhandledRejection", (error) => {
@@ -49,6 +50,12 @@ client.on(Events.MessageCreate, async (message) => {
 
     const content = message.content.trim();
     const command = content.split(/\s+/)[0]?.toLowerCase();
+
+    const pendingPix = pendingPixPrompts.get(message.author.id);
+    if (pendingPix && pendingPix.channelId === message.channel.id) {
+      await handlePixAmountResponse(message, content);
+      return;
+    }
 
     if (command === "!help") {
       await sendHelp(message);
@@ -92,6 +99,11 @@ client.on(Events.MessageCreate, async (message) => {
 
     if (command === "!cobrar") {
       await handlePaymentCommand(message, content);
+      return;
+    }
+
+    if (command === "!pix") {
+      await handlePixPromptCommand(message);
       return;
     }
 
@@ -194,6 +206,7 @@ async function sendHelp(message) {
           "`!notificar mensagem` - Envia DM estilizada para participantes do ticket.",
           "`!finalizar motivo` - Finaliza o ticket e envia avisos.",
           "`!cobrar 10,00` - Gera Pix dentro de um ticket.",
+          "`!pix` - Pergunta o valor e gera QR Code Pix.",
         ].join("\n"),
       },
       {
@@ -957,6 +970,79 @@ async function handleNotifyTicketCommand(message, content) {
   await logTicketEvent(message.guild, "Participantes notificados", `${message.author} notificou participantes de ${message.channel}.`);
 }
 
+async function handlePixPromptCommand(message) {
+  if (!isStaffMember(message.member)) {
+    await sendTemporaryReply(message, "Apenas a equipe pode gerar Pix.");
+    return;
+  }
+
+  if (!config.mercadoPagoAccessToken) {
+    await sendTemporaryReply(message, "Pix automatico ainda nao esta configurado. Adicione `MERCADO_PAGO_ACCESS_TOKEN` nas variaveis do host.");
+    return;
+  }
+
+  pendingPixPrompts.set(message.author.id, {
+    channelId: message.channel.id,
+    guildId: message.guild.id,
+    createdAt: Date.now(),
+  });
+
+  const reply = await message.reply("Qual valor voce quer cobrar? Responda somente com o valor. Exemplo: `25,50`");
+  pendingPixPrompts.set(message.author.id, {
+    channelId: message.channel.id,
+    guildId: message.guild.id,
+    promptMessageId: reply.id,
+    commandMessageId: message.id,
+    createdAt: Date.now(),
+  });
+
+  setTimeout(() => {
+    const pending = pendingPixPrompts.get(message.author.id);
+    if (pending?.channelId === message.channel.id && Date.now() - pending.createdAt >= 55_000) {
+      pendingPixPrompts.delete(message.author.id);
+      reply.delete().catch(() => {});
+    }
+  }, 60_000);
+}
+
+async function handlePixAmountResponse(message, content) {
+  const pendingPix = pendingPixPrompts.get(message.author.id);
+  pendingPixPrompts.delete(message.author.id);
+
+  const amount = parseMoneyAmount(content);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    await sendTemporaryReply(message, "Valor invalido. Use `!pix` novamente e responda algo como `25,50`.");
+    return;
+  }
+
+  const ownerId = getTicketOwnerId(message.channel);
+  const payment = await createPixPayment({
+    amount,
+    description: `Pagamento ${config.shopName} - ${message.channel.name}`,
+    payerEmail: `${ownerId || message.author.id}@discord.local`,
+  });
+
+  pendingPayments.set(String(payment.id), {
+    id: String(payment.id),
+    channelId: message.channel.id,
+    guildId: message.guild.id,
+    ownerId,
+    amount,
+  });
+
+  await message.delete().catch(() => {});
+  if (pendingPix?.promptMessageId) {
+    const promptMessage = await message.channel.messages.fetch(pendingPix.promptMessageId).catch(() => null);
+    await promptMessage?.delete().catch(() => {});
+  }
+  if (pendingPix?.commandMessageId) {
+    const commandMessage = await message.channel.messages.fetch(pendingPix.commandMessageId).catch(() => null);
+    await commandMessage?.delete().catch(() => {});
+  }
+  await sendPixPaymentMessage(message.channel, payment, amount, ownerId);
+  await logTicketEvent(message.guild, "Pix gerado", `${message.author} gerou Pix de R$ ${amount.toFixed(2)} em ${message.channel}.`);
+}
+
 async function handlePaymentCommand(message, content) {
   if (!message.channel.topic?.includes("Dono:")) {
     await message.reply("Use `!cobrar valor` dentro de um canal de ticket.");
@@ -1015,6 +1101,43 @@ async function handlePaymentCommand(message, content) {
   });
 
   await logTicketEvent(message.guild, "Pix gerado", `${message.author} gerou Pix de R$ ${amount.toFixed(2)} em ${message.channel}.`);
+}
+
+async function sendPixPaymentMessage(channel, payment, amount, ownerId) {
+  const transactionData = payment.point_of_interaction?.transaction_data || {};
+  const qrCode = transactionData.qr_code || "Pix copia e cola indisponivel na resposta do Mercado Pago.";
+  const qrCodeBase64 = transactionData.qr_code_base64;
+  const ticketOwner = ownerId ? `<@${ownerId}>` : "Cliente";
+  const files = [];
+  const embed = buildStoreEmbed({ imageUrl: null })
+    .setTitle("Pagamento Pix")
+    .setDescription("Escaneie o QR Code ou copie o codigo Pix abaixo. Quando o pagamento for aprovado, o ticket sera finalizado automaticamente.")
+    .addFields(
+      { name: "Valor", value: `R$ ${amount.toFixed(2)}`, inline: true },
+      { name: "Pagamento", value: String(payment.id), inline: true },
+      { name: "Pix copia e cola", value: `\`\`\`${qrCode.slice(0, 950)}\`\`\`` }
+    );
+
+  if (qrCodeBase64) {
+    const qrBuffer = Buffer.from(qrCodeBase64, "base64");
+    files.push(new AttachmentBuilder(qrBuffer, { name: "qrcode-pix.png" }));
+    embed.setImage("attachment://qrcode-pix.png");
+  }
+
+  await channel.send({
+    content: `${ticketOwner}, Pix gerado no valor de **R$ ${amount.toFixed(2)}**.`,
+    embeds: [embed],
+    files,
+  });
+}
+
+function parseMoneyAmount(value) {
+  const normalized = value
+    .replace(/[^\d,.]/g, "")
+    .replace(/\.(?=\d{3}(,|$))/g, "")
+    .replace(",", ".");
+
+  return Number(normalized);
 }
 
 async function createPixPayment({ amount, description, payerEmail }) {

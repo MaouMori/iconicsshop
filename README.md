@@ -73,9 +73,12 @@ npm start
 !add @pessoa
 !notificar mensagem
 !cobrar 10,00
+!pix
 ```
 
 `!cobrar` deve ser usado dentro de um ticket por alguem da equipe. Ele cria um Pix pelo Mercado Pago, verifica o status a cada minuto e fecha o ticket automaticamente quando o pagamento for aprovado.
+
+`!pix` pergunta o valor e envia uma imagem de QR Code Pix com copia e cola.
 
 ## Permissoes importantes
 
