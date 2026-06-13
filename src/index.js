@@ -1041,7 +1041,7 @@ async function generatePixFromAmountMessage(message, content, pendingPix = null)
     payment = await createPixPayment({
       amount,
       description: `Pagamento ${config.shopName} - ${message.channel.name}`,
-      payerEmail: `${ownerId || message.author.id}@discord.local`,
+      payerEmail: config.mercadoPagoPayerEmail,
     });
 
     pendingPayments.set(String(payment.id), {
@@ -1096,7 +1096,7 @@ async function handlePaymentCommand(message, content) {
   const payment = await createPixPayment({
     amount,
     description: `Pagamento ${config.shopName} - ${message.channel.name}`,
-    payerEmail: `${ownerId || message.author.id}@discord.local`,
+    payerEmail: config.mercadoPagoPayerEmail,
   });
 
   pendingPayments.set(String(payment.id), {

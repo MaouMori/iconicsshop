@@ -38,6 +38,7 @@ TICKET_CLOSED_IMAGE_URL=https://link-da-imagem-de-ticket-finalizado.png
 VERIFIED_ROLE_ID=1506133179356942368
 POST_REGISTRATION_CHANNEL_ID=id_do_canal_para_onde_o_registro_deve_ir
 MERCADO_PAGO_ACCESS_TOKEN=token_do_mercado_pago
+MERCADO_PAGO_PAYER_EMAIL=cliente@example.com
 ```
 
 3. Registre os comandos slash:

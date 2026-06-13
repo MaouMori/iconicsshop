@@ -59,6 +59,7 @@ module.exports = {
   clientId: process.env.DISCORD_CLIENT_ID,
   guildId: process.env.DISCORD_GUILD_ID,
   mercadoPagoAccessToken: process.env.MERCADO_PAGO_ACCESS_TOKEN || null,
+  mercadoPagoPayerEmail: process.env.MERCADO_PAGO_PAYER_EMAIL || "cliente@example.com",
   shopName,
   logoUrl: process.env.SHOP_LOGO_URL || null,
   bannerUrl: process.env.SHOP_BANNER_URL || null,
