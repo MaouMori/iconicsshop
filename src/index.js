@@ -14,6 +14,7 @@ const {
   TextInputBuilder,
   TextInputStyle,
 } = require("discord.js");
+const http = require("http");
 const config = require("./config");
 
 const pendingPayments = new Map();
@@ -21,6 +22,16 @@ const pendingRegistrations = new Map();
 const pendingTicketRequests = new Map();
 const pendingPixPrompts = new Map();
 const TEMP_MESSAGE_MS = 10_000;
+const PORT = Number(process.env.PORT || 3000);
+
+http
+  .createServer((request, response) => {
+    response.writeHead(200, { "Content-Type": "text/plain" });
+    response.end(`Bot ${config.shopName} online\n`);
+  })
+  .listen(PORT, "0.0.0.0", () => {
+    console.log(`Healthcheck HTTP ouvindo na porta ${PORT}`);
+  });
 
 process.on("unhandledRejection", (error) => {
   if (error?.code === 50013) {
